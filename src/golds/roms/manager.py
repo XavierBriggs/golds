@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -125,41 +126,29 @@ class ROMManager:
             return 0
 
         try:
+            # Use the current interpreter so we import into the same environment
+            # (uv/venv installs stable-retro into this interpreter).
             result = subprocess.run(
-                ["python3", "-m", "retro.import", str(import_dir)],
+                [sys.executable, "-m", "retro.import", str(import_dir)],
                 capture_output=True,
                 text=True,
                 timeout=300,
             )
-
-            output = result.stdout + result.stderr
-
-            # Parse output for imported count
-            # Example: "Imported 3 games"
-            match = re.search(r"Imported (\d+) games?", output)
-            if match:
-                return int(match.group(1))
-
-            # Check for individual game imports
-            # Example: "Importing SuperMarioBros-Nes"
-            imports = re.findall(r"Importing (\S+)", output)
-            return len(imports)
-
         except subprocess.TimeoutExpired:
             return 0
-        except FileNotFoundError:
-            # Python3 not found, try python
-            try:
-                result = subprocess.run(
-                    ["python", "-m", "retro.import", str(import_dir)],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                )
-                match = re.search(r"Imported (\d+) games?", result.stdout + result.stderr)
-                return int(match.group(1)) if match else 0
-            except Exception:
-                return 0
+
+        output = result.stdout + result.stderr
+
+        # Parse output for imported count
+        # Example: "Imported 3 games"
+        match = re.search(r"Imported (\d+) games?", output)
+        if match:
+            return int(match.group(1))
+
+        # Check for individual game imports
+        # Example: "Importing SuperMarioBros-Nes"
+        imports = re.findall(r"Importing (\S+)", output)
+        return len(imports)
 
     def verify_game_available(self, game_id: str) -> bool:
         """Check if a game is available in stable-retro.
@@ -230,8 +219,11 @@ ROM Setup Instructions
 ======================
 
 1. ATARI ROMs (Automatic)
-   Atari ROMs are included with gymnasium[atari,accept-rom-license].
-   No manual setup required!
+   Atari environments require `gymnasium[atari]`/`ale-py` and a ROM set.
+
+   Options:
+   - If you already have ROMs: configure the ALE ROM path (e.g. `ALE_ROM_DIR`).
+   - Automatic download (accepting the ROM license): use AutoROM if available in your setup.
 
 2. NES/SNES/Genesis ROMs (Manual)
 

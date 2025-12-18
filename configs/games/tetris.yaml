@@ -1,0 +1,22 @@
+# Tetris (Game Boy) Configuration
+
+name: tetris
+description: "Tetris (Game Boy) with PPO - requires ROM import"
+
+environment:
+  platform: retro
+  game_id: tetris
+  n_envs: 8
+  terminal_on_life_loss: false
+  state: null  # Uses registry default (Level0.TypeA)
+
+ppo:
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.001
+  batch_size: 256
+
+training:
+  total_timesteps: 10000000
+  eval_freq: 100000
+  seed: 42

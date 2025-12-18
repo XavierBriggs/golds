@@ -1,0 +1,22 @@
+# Mortal Kombat II (Genesis) Configuration
+
+name: mortal_kombat_ii
+description: "Mortal Kombat II (Genesis) with PPO - requires ROM import"
+
+environment:
+  platform: retro
+  game_id: mortal_kombat_ii
+  n_envs: 8
+  terminal_on_life_loss: false
+  state: null  # Uses stable-retro default state
+
+ppo:
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.001
+  batch_size: 256
+
+training:
+  total_timesteps: 10000000
+  eval_freq: 100000
+  seed: 42

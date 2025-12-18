@@ -43,6 +43,7 @@ class EnvironmentFactory:
         n_envs: int = 8,
         frame_stack: int = 4,
         seed: int | None = None,
+        state: str | None = None,
         use_subproc: bool = True,
         **kwargs,
     ) -> VecEnv:
@@ -78,12 +79,14 @@ class EnvironmentFactory:
             except RuntimeError:
                 pass  # Already set
 
+        effective_state = state if state is not None else game.default_state
+
         # Create base vectorized environment
         vec_env = maker(
             env_id=game.env_id,
             n_envs=n_envs,
             seed=seed,
-            state=game.default_state,
+            state=effective_state,
             use_subproc=use_subproc,
             **kwargs,
         )
@@ -100,6 +103,7 @@ class EnvironmentFactory:
         game_id: str,
         frame_stack: int = 4,
         seed: int | None = None,
+        state: str | None = None,
         **kwargs,
     ) -> VecEnv:
         """Create a single environment for evaluation.
@@ -120,6 +124,7 @@ class EnvironmentFactory:
             n_envs=1,
             frame_stack=frame_stack,
             seed=seed,
+            state=state,
             use_subproc=False,  # DummyVecEnv for evaluation
             **kwargs,
         )

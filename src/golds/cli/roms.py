@@ -141,8 +141,9 @@ def rom_info() -> None:
     console.print()
 
     console.print("[cyan]Atari ROMs:[/cyan]")
-    console.print("  Atari ROMs are automatically included with gymnasium.")
-    console.print("  No setup needed - just start training!")
+    console.print("  Atari environments use Gymnasium + ALE (`gymnasium[atari]` / `ale-py`).")
+    console.print("  You also need an Atari ROM set (license restrictions apply).")
+    console.print("  If ROMs are missing, use AutoROM (accepting the ROM license) or set `ALE_ROM_DIR`.")
     console.print()
 
     console.print("[cyan]Retro ROMs (NES/SNES/Genesis):[/cyan]")

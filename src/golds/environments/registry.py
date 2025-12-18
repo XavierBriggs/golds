@@ -163,3 +163,22 @@ GameRegistry.register(
         default_state="Level1-1",
     )
 )
+
+GameRegistry.register(
+    GameRegistration(
+        game_id="tetris",
+        platform="retro",
+        display_name="Tetris (Game Boy)",
+        env_id="Tetris-GameBoy",
+        default_state="Level0.TypeA",
+    )
+)
+
+GameRegistry.register(
+    GameRegistration(
+        game_id="mortal_kombat_ii",
+        platform="retro",
+        display_name="Mortal Kombat II (Genesis)",
+        env_id="MortalKombatII-Genesis",
+    )
+)

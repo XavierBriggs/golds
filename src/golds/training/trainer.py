@@ -75,6 +75,7 @@ class Trainer:
             n_envs=env_config.n_envs,
             frame_stack=env_config.frame_stack,
             seed=self.config.training.seed,
+            state=env_config.state,
             use_subproc=env_config.use_subproc,
             wrapper_kwargs={
                 "terminal_on_life_loss": env_config.terminal_on_life_loss,
@@ -90,6 +91,7 @@ class Trainer:
             game_id=env_config.game_id,
             frame_stack=env_config.frame_stack,
             seed=self.config.training.seed,
+            state=env_config.state,
         )
 
     def _create_model(self, train_env: VecEnv) -> PPO:

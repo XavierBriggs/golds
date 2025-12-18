@@ -15,6 +15,7 @@ except ImportError:
     RETRO_AVAILABLE = False
 
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv
+from stable_baselines3.common.monitor import Monitor
 
 
 class RetroPreprocessing(gym.Wrapper):
@@ -161,9 +162,14 @@ def make_retro_env(
     # Create base environment
     env = retro.make(
         game=game,
-        state=state,
+        state=state if state is not None else retro.State.DEFAULT,
         use_restricted_actions=retro.Actions.FILTERED,
+        # Avoid OpenGL/pyglet viewer requirements during headless training.
+        render_mode="rgb_array",
     )
+
+    # Add Monitor so SB3 evaluation uses true episode returns/lengths via info["episode"].
+    env = Monitor(env)
 
     # Apply frame skipping
     if frame_skip > 1:
@@ -217,7 +223,11 @@ def make_retro_vec_env(
     }
 
     if wrapper_kwargs:
-        default_kwargs.update(wrapper_kwargs)
+        # Retro preprocessing does not support Atari-specific options like
+        # `terminal_on_life_loss`; ignore unknown keys.
+        allowed = {"screen_size", "grayscale", "clip_reward", "frame_skip"}
+        filtered = {k: v for k, v in wrapper_kwargs.items() if k in allowed}
+        default_kwargs.update(filtered)
 
     def make_env(rank: int) -> Callable[[], gym.Env]:
         """Create env factory function for vectorization."""
@@ -238,7 +248,16 @@ def make_retro_vec_env(
     env_fns = [make_env(i) for i in range(n_envs)]
 
     if use_subproc:
-        vec_env = SubprocVecEnv(env_fns)
+        try:
+            vec_env = SubprocVecEnv(env_fns)
+        except PermissionError:
+            # Some environments disallow `forkserver` (SB3's default when available).
+            # `fork` works on Linux without requiring an importable `__main__` file
+            # (unlike `spawn`).
+            try:
+                vec_env = SubprocVecEnv(env_fns, start_method="fork")
+            except Exception:
+                vec_env = SubprocVecEnv(env_fns, start_method="spawn")
     else:
         vec_env = DummyVecEnv(env_fns)
 

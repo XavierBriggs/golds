@@ -151,7 +151,7 @@ golds/
 ## ROM Setup
 
 ### Atari Games
-Atari ROMs are included automatically. No setup needed.
+Atari environments require `gymnasium[atari]`/`ale-py` and an Atari ROM set (e.g. via AutoROM).
 
 ### NES/SNES Games
 1. Obtain ROMs legally (dump from cartridges you own)

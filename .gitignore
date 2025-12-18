@@ -73,6 +73,7 @@ roms/*.gb
 roms/*.gbc
 roms/*.gba
 roms/*.pce
+!roms/README.md
 
 # Training outputs
 outputs/
