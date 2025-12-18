@@ -1,0 +1,34 @@
+# GOLDS Default Configuration
+# DeepMind-style PPO hyperparameters for Atari-like games
+
+ppo:
+  learning_rate: 2.5e-4
+  n_steps: 128
+  batch_size: 256
+  n_epochs: 4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.1
+  clip_range_vf: null
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+environment:
+  n_envs: 8
+  frame_stack: 4
+  frame_skip: 4
+  screen_size: 84
+  grayscale: true
+  clip_reward: true
+  terminal_on_life_loss: true
+  use_subproc: true
+
+training:
+  total_timesteps: 10000000
+  eval_freq: 50000
+  eval_episodes: 10
+  save_freq: 100000
+  log_interval: 1
+  seed: null
+  device: auto

@@ -1,0 +1,21 @@
+# Space Invaders (Atari) Configuration
+
+name: space_invaders
+description: "Space Invaders Atari 2600 with DeepMind PPO settings"
+
+environment:
+  platform: atari
+  game_id: space_invaders
+  n_envs: 8
+  terminal_on_life_loss: true
+
+ppo:
+  # Standard DeepMind settings work well for Space Invaders
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.01
+
+training:
+  total_timesteps: 10000000
+  eval_freq: 50000
+  seed: 42

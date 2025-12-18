@@ -1,0 +1,21 @@
+# Pong (Atari) Configuration
+
+name: pong
+description: "Pong Atari 2600 - simple paddle game, good for testing"
+
+environment:
+  platform: atari
+  game_id: pong
+  n_envs: 8
+  terminal_on_life_loss: false  # Pong doesn't have lives
+
+ppo:
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.01
+
+training:
+  # Pong is simpler, needs less training
+  total_timesteps: 5000000
+  eval_freq: 25000
+  seed: 42

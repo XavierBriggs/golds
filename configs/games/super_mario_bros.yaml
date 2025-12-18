@@ -1,0 +1,26 @@
+# Super Mario Bros (NES) Configuration
+
+name: super_mario_bros
+description: "Super Mario Bros NES with PPO - requires ROM import"
+
+environment:
+  platform: retro
+  game_id: super_mario_bros
+  n_envs: 8
+  # Mario doesn't use arcade-style lives system
+  terminal_on_life_loss: false
+  state: null  # Uses default Level1-1
+
+ppo:
+  # Slightly lower entropy for platformers
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.001
+  # Platformers may benefit from longer rollouts
+  batch_size: 256
+
+training:
+  # Platformers often need more training time
+  total_timesteps: 20000000
+  eval_freq: 100000
+  seed: 42
