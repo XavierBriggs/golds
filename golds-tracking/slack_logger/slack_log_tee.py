@@ -4,6 +4,8 @@ import sys
 import time
 from collections import deque
 from pathlib import Path
+from queue import Full, Queue
+from threading import Event, Thread
 
 # Add parent directory (golds-tracking/) to path so we can import slack_logger
 # This works whether run as a script or as a module
@@ -21,18 +23,43 @@ def now_iso() -> str:
 
 
 def is_checkpoint_message(line: str) -> bool:
-    """Check if a line contains checkpoint-related information."""
+    """Return True for "milestone" lines worth notifying immediately."""
     line_lower = line.lower()
-    checkpoint_keywords = [
+    checkpoint_keywords = (
         "saving new best model",
         "saving best model",
-        "checkpoint",
-        "saved model",
-        "best_training",
         "checkpoints/",
         "final model saved",
-    ]
+    )
     return any(keyword in line_lower for keyword in checkpoint_keywords)
+
+
+def _slack_worker(
+    q: Queue[str],
+    stop: Event,
+    *,
+    attempts: int,
+) -> None:
+    while True:
+        if stop.is_set() and q.empty():
+            return
+        try:
+            msg = q.get(timeout=0.5)
+        except Exception:
+            continue
+        try:
+            post_message_with_backoff(msg, username="golds", attempts=attempts)
+        finally:
+            q.task_done()
+
+
+def _enqueue(q: Queue[str], payload: str) -> None:
+    try:
+        q.put_nowait(payload)
+    except Full:
+        # Do not block training logs if Slack is slow/unreachable.
+        # Best-effort: drop the message.
+        return
 
 
 def main() -> int:
@@ -48,12 +75,25 @@ def main() -> int:
     interval_s = float(os.environ.get("SLACK_NOTIFY_INTERVAL_SECONDS", "20"))
     max_lines = int(os.environ.get("SLACK_NOTIFY_MAX_LINES", "25"))
     max_chars = int(os.environ.get("SLACK_NOTIFY_MAX_CHARS", "3500"))
+    slack_attempts = int(os.environ.get("SLACK_NOTIFY_ATTEMPTS", "3"))
+    slack_queue_max = int(os.environ.get("SLACK_NOTIFY_QUEUE_MAX", "100"))
+    slack_drain_seconds = float(os.environ.get("SLACK_NOTIFY_DRAIN_SECONDS", "5"))
 
     buffer: deque[str] = deque()
     last_send = time.monotonic()
     last_progress_send = time.monotonic()
     # Keep recent context lines for checkpoint messages
     recent_context: deque[str] = deque(maxlen=5)
+
+    slack_q: Queue[str] = Queue(maxsize=slack_queue_max)
+    stop = Event()
+    worker = Thread(
+        target=_slack_worker,
+        args=(slack_q, stop),
+        kwargs={"attempts": slack_attempts},
+        daemon=True,
+    )
+    worker.start()
 
     def flush(force: bool = False) -> None:
         nonlocal last_send
@@ -71,23 +111,23 @@ def main() -> int:
             text = text[-max_chars:]
 
         payload = f"{job_name}\n{now_iso()}\n```\n{text}\n```"
-        post_message_with_backoff(payload, username="golds")
+        _enqueue(slack_q, payload)
 
         last_send = time.monotonic()
 
     def send_checkpoint_notification(checkpoint_line: str) -> None:
-        """Immediately send checkpoint notification to Slack."""
+        """Enqueue a checkpoint notification to Slack."""
         # Include recent context lines for better understanding
         # Note: recent_context already includes checkpoint_line, so we use it directly
         context_lines = list(recent_context)
         context_text = "\n".join(context_lines) if context_lines else checkpoint_line
 
         payload = f"✅ CHECKPOINT: {job_name}\n{now_iso()}\n```\n{context_text}\n```"
-        post_message_with_backoff(payload, username="golds")
+        _enqueue(slack_q, payload)
 
     with log_path.open("a", encoding="utf-8", errors="replace") as f:
         start_msg = f"{job_name} started {now_iso()}"
-        post_message_with_backoff(start_msg, username="golds")
+        _enqueue(slack_q, start_msg)
 
         for raw in sys.stdin:
             line = raw.rstrip("\n")
@@ -115,7 +155,13 @@ def main() -> int:
 
         flush(force=True)
         done_msg = f"{job_name} finished {now_iso()}"
-        post_message_with_backoff(done_msg, username="golds")
+        _enqueue(slack_q, done_msg)
+
+    # Best-effort drain. Never block indefinitely (backpressure here can hang training).
+    deadline = time.monotonic() + max(0.0, slack_drain_seconds)
+    while (not slack_q.empty()) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    stop.set()
 
     return 0
 

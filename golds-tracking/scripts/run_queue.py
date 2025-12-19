@@ -30,10 +30,47 @@ class Job:
     config: str
     retries: int = 0
     resume_latest: bool = False
+    resume_strategy: str | None = None
 
 
 def now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+def _parse_dotenv(text: str) -> dict[str, str]:
+    env: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        env[key] = value
+    return env
+
+
+def _maybe_load_env_from_dotenv() -> None:
+    """Load golds-tracking/.env into os.environ (best-effort)."""
+    dotenv_path = tracking_root / ".env"
+    if not dotenv_path.exists():
+        return
+    try:
+        parsed = _parse_dotenv(dotenv_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    for k, v in parsed.items():
+        os.environ.setdefault(k, v)
 
 
 def _resolve_path(candidate: str | Path, *, base_dirs: list[Path]) -> Path:
@@ -80,6 +117,24 @@ def _is_valid_sb3_zip(path: Path) -> bool:
         return False
 
 
+def _best_eval_model(exp_dir: Path) -> Path | None:
+    p = exp_dir / "best" / "best_model.zip"
+    return p if p.exists() and _is_valid_sb3_zip(p) else None
+
+
+def _best_training_model(exp_dir: Path) -> Path | None:
+    p = exp_dir / "models" / "best_training" / "best_training_model.zip"
+    return p if p.exists() and _is_valid_sb3_zip(p) else None
+
+
+def _final_model(exp_dir: Path) -> Path | None:
+    p = exp_dir / "models" / "final_model.zip"
+    if p.exists() and _is_valid_sb3_zip(p):
+        return p
+    p2 = exp_dir / "models" / "final_model"
+    return p2 if p2.exists() and _is_valid_sb3_zip(p2) else None
+
+
 def _find_latest_checkpoint(exp_dir: Path) -> Path | None:
     ckpt_dir = exp_dir / "models" / "checkpoints"
     if not (ckpt_dir.exists() and ckpt_dir.is_dir()):
@@ -119,10 +174,18 @@ def load_jobs(queue_path: Path) -> tuple[list[Job], dict[str, Any]]:
         resume_latest = bool(
             item.get("resume_latest", defaults.get("resume_latest", False))
         )
+        resume_strategy = item.get("resume_strategy", defaults.get("resume_strategy"))
         if force_resume:
             resume_latest = True
+            resume_strategy = "latest_checkpoint"
         jobs.append(
-            Job(name=name, config=config, retries=retries, resume_latest=resume_latest)
+            Job(
+                name=name,
+                config=config,
+                retries=retries,
+                resume_latest=resume_latest,
+                resume_strategy=str(resume_strategy) if resume_strategy else None,
+            )
         )
     return jobs, data
 
@@ -171,12 +234,29 @@ def run_job(job: Job, log_dir: Path, meta_dir: Path) -> int:
     proc_env = os.environ.copy()
     # Avoid uv defaulting to a non-writable cache location (common in sandboxed/CI environments).
     proc_env.setdefault("UV_CACHE_DIR", str(golds_root / ".uv-cache"))
+    # Ensure training/eval logs are not buffered (otherwise long evals can look "hung"
+    # and the watchdog can false-trigger).
+    proc_env.setdefault("PYTHONUNBUFFERED", "1")
 
     exp_name = _experiment_name_from_config(config_path) if config_path.exists() else None
     exp_dir = (output_root / exp_name) if exp_name else None
     resume_path: Path | None = None
-    if job.resume_latest and exp_dir is not None:
-        resume_path = _find_latest_checkpoint(exp_dir)
+    if exp_dir is not None:
+        strategy = job.resume_strategy
+        if strategy is None and job.resume_latest:
+            strategy = "latest_checkpoint"
+
+        if strategy in {"latest_checkpoint", "checkpoint"}:
+            resume_path = _find_latest_checkpoint(exp_dir)
+        elif strategy in {"best_eval", "best_model"}:
+            resume_path = _best_eval_model(exp_dir)
+        elif strategy in {"best_training"}:
+            resume_path = _best_training_model(exp_dir)
+        elif strategy in {"final"}:
+            resume_path = _final_model(exp_dir)
+        elif strategy in {"none", "false", "off"}:
+            resume_path = None
+
         if resume_path is not None:
             cmd += ["--resume", str(resume_path)]
 
@@ -185,6 +265,7 @@ def run_job(job: Job, log_dir: Path, meta_dir: Path) -> int:
         "config": job.config,
         "config_resolved": str(config_path),
         "resume_latest": job.resume_latest,
+        "resume_strategy": job.resume_strategy,
         "resume_resolved": str(resume_path) if resume_path is not None else None,
         "start_time": now_iso(),
         "command": cmd,
@@ -202,6 +283,44 @@ def run_job(job: Job, log_dir: Path, meta_dir: Path) -> int:
         meta["exit_code_tee"] = None
         meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
         return 2
+
+    # Preflight to fail fast before starting long runs.
+    preflight_enabled = os.environ.get("GOLDS_QUEUE_PREFLIGHT", "").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    if preflight_enabled:
+        preflight_cmd = [
+            "uv",
+            "run",
+            "golds",
+            "train",
+            "preflight",
+            "--config",
+            str(config_path),
+            "--n-envs",
+            "1",
+            "--no-subproc",
+            "--steps",
+            os.environ.get("GOLDS_QUEUE_PREFLIGHT_STEPS", "10"),
+        ]
+        preflight = subprocess.run(
+            preflight_cmd,
+            cwd=str(golds_root),
+            env=proc_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if preflight.returncode != 0:
+            msg = f"queue failed {job.name}: preflight failed {now_iso()}\n{preflight.stdout}"
+            post_message_with_backoff(msg, username="golds")
+            meta["end_time"] = now_iso()
+            meta["exit_code_train"] = preflight.returncode
+            meta["exit_code_tee"] = None
+            meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+            return preflight.returncode
 
     start_msg = f"queue start {job.name} {now_iso()}"
     post_message_with_backoff(start_msg, username="golds")
@@ -228,14 +347,71 @@ def run_job(job: Job, log_dir: Path, meta_dir: Path) -> int:
     proc_tee = subprocess.Popen(
         tee_cmd,
         cwd=str(tracking_root),
+        env=proc_env,
         stdin=proc_train.stdout,
         stdout=sys.stdout,
         stderr=sys.stderr,
         text=True,
     )
 
-    code_train = proc_train.wait()
-    code_tee = proc_tee.wait()
+    stall_seconds = float(os.environ.get("GOLDS_QUEUE_STALL_SECONDS", "1800"))
+    poll_seconds = float(os.environ.get("GOLDS_QUEUE_POLL_SECONDS", "20"))
+    last_change = time.monotonic()
+    last_mtime = 0.0
+    last_size = 0
+    try:
+        st = log_path.stat()
+        last_mtime = st.st_mtime
+        last_size = st.st_size
+    except Exception:
+        pass
+
+    code_train: int | None = None
+    code_tee: int | None = None
+    while True:
+        code_train = proc_train.poll()
+        code_tee = proc_tee.poll()
+        if code_train is not None and code_tee is not None:
+            break
+
+        # If the tee process dies, the training process can block on stdout.
+        if code_tee is not None and code_train is None:
+            proc_train.terminate()
+            break
+
+        # Watch for stalled output (common symptom of deadlocks/backpressure).
+        try:
+            st = log_path.stat()
+            if st.st_mtime != last_mtime or st.st_size != last_size:
+                last_change = time.monotonic()
+                last_mtime = st.st_mtime
+                last_size = st.st_size
+        except Exception:
+            pass
+
+        if stall_seconds > 0 and (time.monotonic() - last_change) > stall_seconds:
+            post_message_with_backoff(
+                f"queue watchdog: {job.name} no log output for {int(stall_seconds)}s; terminating {now_iso()}",
+                username="golds",
+            )
+            proc_train.terminate()
+            proc_tee.terminate()
+            break
+
+        time.sleep(poll_seconds)
+
+    if code_train is None:
+        try:
+            code_train = proc_train.wait(timeout=30)
+        except Exception:
+            proc_train.kill()
+            code_train = proc_train.wait()
+    if code_tee is None:
+        try:
+            code_tee = proc_tee.wait(timeout=30)
+        except Exception:
+            proc_tee.kill()
+            code_tee = proc_tee.wait()
 
     meta["end_time"] = now_iso()
     meta["exit_code_train"] = code_train
@@ -251,6 +427,8 @@ def run_job(job: Job, log_dir: Path, meta_dir: Path) -> int:
 
 
 def main() -> int:
+    _maybe_load_env_from_dotenv()
+
     queue_arg = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("configs") / "queue.yaml"
     queue_path = _resolve_path(queue_arg, base_dirs=[Path.cwd(), tracking_root])
     jobs, _ = load_jobs(queue_path)

@@ -16,6 +16,9 @@ ppo:
   ent_coef: 0.01
 
 training:
-  total_timesteps: 15000000
-  eval_freq: 50000
+  # Round 2 long-form target
+  total_timesteps: 30000000
+  eval_freq: 100000
+  eval_episodes: 10
+  save_freq: 500000
   seed: 42

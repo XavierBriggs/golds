@@ -182,3 +182,13 @@ GameRegistry.register(
         env_id="MortalKombatII-Genesis",
     )
 )
+
+GameRegistry.register(
+    GameRegistration(
+        game_id="sonic_the_hedgehog",
+        platform="retro",
+        display_name="Sonic the Hedgehog (Genesis)",
+        env_id="SonicTheHedgehog-Genesis",
+        default_state="GreenHillZone.Act1",
+    )
+)

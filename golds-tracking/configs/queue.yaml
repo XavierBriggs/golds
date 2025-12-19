@@ -5,14 +5,19 @@ default:
   resume_latest: true
 
 jobs:
-  - name: 01_super_mario_bros_2_ppo
-    config: configs/games/super_mario_bros_2_japan.yaml
+  - name: 01_sonic_the_hedgehog_ppo
+    config: configs/games/sonic_the_hedgehog.yaml
 
-  - name: 02_mortal_kombat_ii_ppo
+  - name: 02_super_mario_bros_2_ppo
+    config: configs/games/super_mario_bros_2_japan.yaml
+    # Resume from best eval model rather than the newest checkpoint (which can regress).
+    resume_strategy: best_eval
+
+  - name: 03_mortal_kombat_ii_ppo
     config: configs/games/mortal_kombat_ii.yaml
 
-  - name: 03_tetris_ppo
+  - name: 04_tetris_ppo
     config: configs/games/tetris.yaml
 
-  - name: 04_space_invaders_ppo
+  - name: 05_space_invaders_ppo
     config: configs/games/space_invaders.yaml

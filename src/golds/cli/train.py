@@ -53,6 +53,109 @@ def train_run(
     trainer.train()
 
 
+@train_app.command("preflight")
+def train_preflight(
+    config: Path = typer.Option(
+        ..., "--config", "-c", help="Path to experiment config file"
+    ),
+    n_envs: int = typer.Option(
+        1, "--n-envs", help="Override n_envs for this check (default: 1)"
+    ),
+    use_subproc: bool = typer.Option(
+        False,
+        "--use-subproc/--no-subproc",
+        help="Whether to use SubprocVecEnv for the check (default: no-subproc)",
+    ),
+    steps: int = typer.Option(
+        10, "--steps", help="Number of env steps to run (default: 10)"
+    ),
+) -> None:
+    """Quickly verify that an experiment config can create envs and step them.
+
+    This is intended for unattended runs (queues) to fail fast before launching
+    long training jobs.
+    """
+    import numpy as np
+
+    from golds.config.loader import ConfigLoader
+    from golds.environments.factory import EnvironmentFactory
+
+    if not config.exists():
+        console.print(f"[red]Config file not found: {config}[/red]")
+        raise typer.Exit(1)
+
+    loader = ConfigLoader()
+    exp_config = loader.load(config)
+
+    env_cfg = exp_config.environment
+    train_env = None
+    eval_env = None
+
+    try:
+        console.print("[cyan]Preflight: creating train env...[/cyan]")
+        effective_n_envs = max(1, int(n_envs))
+        train_env = EnvironmentFactory.create(
+            game_id=env_cfg.game_id,
+            n_envs=effective_n_envs,
+            frame_stack=env_cfg.frame_stack,
+            seed=exp_config.training.seed,
+            state=env_cfg.state,
+            use_subproc=bool(use_subproc),
+            players=env_cfg.players,
+            opponent_mode=env_cfg.opponent,
+            opponent_model_path=env_cfg.opponent_model_path,
+            opponent_snapshot_dir=None,
+            wrapper_kwargs={
+                "terminal_on_life_loss": env_cfg.terminal_on_life_loss,
+                "clip_reward": env_cfg.clip_reward,
+            },
+        )
+
+        console.print("[cyan]Preflight: reset + step train env...[/cyan]")
+        obs = train_env.reset()
+        for _ in range(max(1, int(steps))):
+            sample = train_env.action_space.sample()
+            action = (
+                np.array([sample])
+                if effective_n_envs == 1
+                else np.array([train_env.action_space.sample() for _ in range(effective_n_envs)])
+            )
+            obs, _, dones, _ = train_env.step(action)
+            if bool(np.any(dones)):
+                obs = train_env.reset()
+
+        # Some emulators (notably `stable-retro`) cannot create multiple instances
+        # in the same process. Close the train env before creating the eval env.
+        train_env.close()
+        train_env = None
+
+        console.print("[cyan]Preflight: creating eval env...[/cyan]")
+        eval_env = EnvironmentFactory.create_eval_env(
+            game_id=env_cfg.game_id,
+            frame_stack=env_cfg.frame_stack,
+            seed=exp_config.training.seed,
+            state=env_cfg.state,
+            players=env_cfg.players,
+            opponent_mode="noop" if (env_cfg.players == 2 and env_cfg.opponent != "none") else env_cfg.opponent,
+            opponent_model_path=env_cfg.opponent_model_path if env_cfg.opponent not in {"none", "noop"} else None,
+            opponent_snapshot_dir=None,
+        )
+        _ = eval_env.reset()
+
+    except Exception as e:
+        console.print(f"[red]Preflight failed: {e}[/red]")
+        raise typer.Exit(1)
+    finally:
+        try:
+            if train_env is not None:
+                train_env.close()
+        finally:
+            if eval_env is not None:
+                eval_env.close()
+
+    console.print("[green]Preflight OK[/green]")
+
+
 @train_app.command("game")
 def train_game(
     game: str = typer.Argument(..., help="Game ID (e.g., space_invaders)"),

@@ -1,0 +1,22 @@
+{
+  "job_name": "01_sonic_the_hedgehog_ppo",
+  "config": "configs/games/sonic_the_hedgehog.yaml",
+  "config_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/sonic_the_hedgehog.yaml",
+  "resume_latest": true,
+  "resume_strategy": null,
+  "resume_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs/sonic_the_hedgehog/models/checkpoints/sonic_the_hedgehog_1499976_steps.zip",
+  "start_time": "2025-12-19T06:31:51-0600",
+  "command": [
+    "uv",
+    "run",
+    "golds",
+    "train",
+    "run",
+    "--config",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/sonic_the_hedgehog.yaml",
+    "--output",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs",
+    "--resume",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs/sonic_the_hedgehog/models/checkpoints/sonic_the_hedgehog_1499976_steps.zip"
+  ]
+}

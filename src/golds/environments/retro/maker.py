@@ -7,6 +7,7 @@ from typing import Any, Callable
 import cv2
 import gymnasium as gym
 import numpy as np
+from pathlib import Path
 
 try:
     import retro
@@ -140,6 +141,11 @@ def make_retro_env(
     grayscale: bool = True,
     clip_reward: bool = True,
     frame_skip: int = 4,
+    players: int = 1,
+    opponent_mode: str = "none",
+    opponent_model_path: str | None = None,
+    opponent_snapshot_dir: str | None = None,
+    opponent_reload_interval_steps: int = 500,
 ) -> gym.Env:
     """Create a single retro environment with preprocessing.
 
@@ -164,6 +170,7 @@ def make_retro_env(
         game=game,
         state=state if state is not None else retro.State.DEFAULT,
         use_restricted_actions=retro.Actions.FILTERED,
+        players=players,
         # Avoid OpenGL/pyglet viewer requirements during headless training.
         render_mode="rgb_array",
     )
@@ -192,6 +199,11 @@ def make_retro_vec_env(
     seed: int | None = None,
     state: str | None = None,
     use_subproc: bool = True,
+    players: int = 1,
+    opponent_mode: str = "none",
+    opponent_model_path: str | None = None,
+    opponent_snapshot_dir: str | None = None,
+    opponent_reload_interval_steps: int = 500,
     wrapper_kwargs: dict | None = None,
     **kwargs,
 ) -> VecEnv:
@@ -237,6 +249,11 @@ def make_retro_vec_env(
                 game=env_id,
                 state=state,
                 **default_kwargs,
+                players=players,
+                opponent_mode=opponent_mode,
+                opponent_model_path=opponent_model_path,
+                opponent_snapshot_dir=opponent_snapshot_dir,
+                opponent_reload_interval_steps=opponent_reload_interval_steps,
             )
             if seed is not None:
                 env.reset(seed=seed + rank)

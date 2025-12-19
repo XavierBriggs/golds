@@ -48,6 +48,20 @@ class EnvironmentConfig(BaseModel):
     state: Optional[str] = Field(
         default=None, description="Initial state for retro games"
     )
+    players: int = Field(
+        default=1,
+        ge=1,
+        le=2,
+        description="Number of players (retro only). Use 2 for PvP/self-play states.",
+    )
+    opponent: Literal["none", "random", "noop", "model", "self_play"] = Field(
+        default="none",
+        description="Opponent policy mode when players=2 (retro only).",
+    )
+    opponent_model_path: Optional[str] = Field(
+        default=None,
+        description="Path to opponent model .zip (used when opponent='model').",
+    )
 
 
 class TrainingConfig(BaseModel):
@@ -62,6 +76,10 @@ class TrainingConfig(BaseModel):
         description="Evaluation frequency (timesteps); 0 disables evaluation",
     )
     eval_episodes: int = Field(default=10, ge=1, description="Episodes per evaluation")
+    eval_deterministic: bool = Field(
+        default=True,
+        description="Whether evaluation uses deterministic actions (if False, uses stochastic actions).",
+    )
     save_freq: int = Field(
         default=100_000,
         ge=0,
@@ -71,6 +89,16 @@ class TrainingConfig(BaseModel):
     seed: Optional[int] = Field(default=None, description="Random seed")
     device: Literal["auto", "cuda", "cpu"] = Field(
         default="auto", description="Device to use"
+    )
+    self_play_snapshot_freq: int = Field(
+        default=0,
+        ge=0,
+        description="If >0 and opponent='self_play', save opponent snapshots every N timesteps.",
+    )
+    self_play_max_snapshots: int = Field(
+        default=5,
+        ge=1,
+        description="Max number of opponent snapshots to keep (self-play only).",
     )
 
 

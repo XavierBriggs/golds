@@ -5,6 +5,7 @@ from __future__ import annotations
 import multiprocessing
 import sys
 from typing import Callable
+from pathlib import Path
 
 from stable_baselines3.common.vec_env import (
     DummyVecEnv,
@@ -81,6 +82,13 @@ class EnvironmentFactory:
 
         effective_state = state if state is not None else game.default_state
 
+        # Retro-only optional args (kept in kwargs so CLI/config can pass them through).
+        players = int(kwargs.get("players", 1) or 1)
+        opponent_mode = str(kwargs.get("opponent_mode", "none") or "none")
+        opponent_model_path = kwargs.get("opponent_model_path")
+        opponent_snapshot_dir = kwargs.get("opponent_snapshot_dir")
+        opponent_reload_interval_steps = int(kwargs.get("opponent_reload_interval_steps", 500) or 500)
+
         # Create base vectorized environment
         vec_env = maker(
             env_id=game.env_id,
@@ -94,6 +102,21 @@ class EnvironmentFactory:
         # Apply common wrappers
         vec_env = VecFrameStack(vec_env, n_stack=frame_stack)
         vec_env = VecTransposeImage(vec_env)  # HWC -> CHW for PyTorch
+
+        # Retro self-play/opponent wrapper must happen after frame stacking/transpose
+        # so opponent policies see the same observation format as the learner.
+        if game.platform == "retro" and players == 2 and opponent_mode != "none":
+            from golds.environments.retro.self_play import OpponentSpec, VecTwoPlayerOpponentWrapper
+
+            vec_env = VecTwoPlayerOpponentWrapper(
+                vec_env,
+                opponent=OpponentSpec(
+                    mode=opponent_mode,  # type: ignore[arg-type]
+                    model_path=Path(opponent_model_path) if opponent_model_path else None,
+                    snapshot_dir=Path(opponent_snapshot_dir) if opponent_snapshot_dir else None,
+                    reload_interval_steps=opponent_reload_interval_steps,
+                ),
+            )
 
         return vec_env
 

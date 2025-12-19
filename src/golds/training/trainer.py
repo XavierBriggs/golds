@@ -9,7 +9,7 @@ from typing import Any
 
 from rich.console import Console
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
+from stable_baselines3.common.callbacks import CallbackList
 from stable_baselines3.common.vec_env import VecEnv
 
 from golds.config.schema import ExperimentConfig
@@ -17,6 +17,8 @@ from golds.environments.factory import EnvironmentFactory
 from golds.training.callbacks import (
     ProgressCallback,
     SaveOnBestTrainingRewardCallback,
+    SelfPlaySnapshotCallback,
+    SafeCheckpointCallback,
     create_eval_callback,
 )
 from golds.utils.device import get_device
@@ -79,6 +81,12 @@ class Trainer:
             seed=self.config.training.seed,
             state=env_config.state,
             use_subproc=env_config.use_subproc,
+            players=env_config.players,
+            opponent_mode=env_config.opponent,
+            opponent_model_path=env_config.opponent_model_path,
+            opponent_snapshot_dir=str(self.output_dir / "self_play" / "opponents")
+            if env_config.opponent == "self_play"
+            else None,
             wrapper_kwargs={
                 "terminal_on_life_loss": env_config.terminal_on_life_loss,
                 "clip_reward": env_config.clip_reward,
@@ -89,11 +97,28 @@ class Trainer:
         """Create evaluation environment."""
         env_config = self.config.environment
 
+        opponent_mode = env_config.opponent
+        opponent_model_path = env_config.opponent_model_path
+        opponent_snapshot_dir = (
+            str(self.output_dir / "self_play" / "opponents")
+            if env_config.opponent == "self_play"
+            else None
+        )
+        # Keep evaluation stationary for self-play training so "best_model" is meaningful.
+        if env_config.players == 2 and env_config.opponent == "self_play":
+            opponent_mode = "noop"
+            opponent_model_path = None
+            opponent_snapshot_dir = None
+
         return EnvironmentFactory.create_eval_env(
             game_id=env_config.game_id,
             frame_stack=env_config.frame_stack,
             seed=self.config.training.seed,
             state=env_config.state,
+            players=env_config.players,
+            opponent_mode=opponent_mode,
+            opponent_model_path=opponent_model_path,
+            opponent_snapshot_dir=opponent_snapshot_dir,
         )
 
     def _create_model(self, train_env: VecEnv) -> PPO:
@@ -143,12 +168,13 @@ class Trainer:
                 eval_freq=self.config.training.eval_freq,
                 n_eval_episodes=self.config.training.eval_episodes,
                 n_envs=self.config.environment.n_envs,
+                deterministic=self.config.training.eval_deterministic,
             )
             callbacks.append(eval_callback)
 
         # Checkpoint callback (optional)
         if self.config.training.save_freq > 0:
-            checkpoint_callback = CheckpointCallback(
+            checkpoint_callback = SafeCheckpointCallback(
                 save_freq=max(
                     1, self.config.training.save_freq // self.config.environment.n_envs
                 ),
@@ -171,6 +197,22 @@ class Trainer:
             display_freq=50_000,
         )
         callbacks.append(progress_callback)
+
+        # Self-play snapshots (optional)
+        if (
+            self.config.environment.players == 2
+            and self.config.environment.opponent == "self_play"
+            and self.config.training.self_play_snapshot_freq > 0
+        ):
+            snapshot_dir = self.output_dir / "self_play" / "opponents"
+            callbacks.append(
+                SelfPlaySnapshotCallback(
+                    snapshot_dir=snapshot_dir,
+                    save_freq=self.config.training.self_play_snapshot_freq,
+                    max_snapshots=self.config.training.self_play_max_snapshots,
+                    verbose=0,
+                )
+            )
 
         return CallbackList(callbacks)
 

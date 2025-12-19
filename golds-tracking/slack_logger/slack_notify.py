@@ -101,6 +101,9 @@ def post_message(text: str, username: str | None = None) -> bool:
 
 
 def post_message_with_backoff(text: str, username: str | None = None, attempts: int = 5) -> bool:
+    # If Slack isn't configured, don't waste time sleeping/backing off.
+    if not get_webhook_url():
+        return False
     delay = 1.0
     for _ in range(max(1, attempts)):
         ok = post_message(text=text, username=username)
