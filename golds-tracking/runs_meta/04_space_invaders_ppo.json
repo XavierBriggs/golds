@@ -1,0 +1,24 @@
+{
+  "job_name": "04_space_invaders_ppo",
+  "config": "configs/games/space_invaders.yaml",
+  "config_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/space_invaders.yaml",
+  "resume_latest": true,
+  "resume_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs/space_invaders/models/checkpoints/space_invaders_5400000_steps.zip",
+  "start_time": "2025-12-19T00:46:07-0600",
+  "command": [
+    "uv",
+    "run",
+    "golds",
+    "train",
+    "run",
+    "--config",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/space_invaders.yaml",
+    "--output",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs",
+    "--resume",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs/space_invaders/models/checkpoints/space_invaders_5400000_steps.zip"
+  ],
+  "end_time": "2025-12-19T00:46:58-0600",
+  "exit_code_train": 1,
+  "exit_code_tee": 0
+}

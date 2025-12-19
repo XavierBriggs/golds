@@ -6,7 +6,7 @@ description: "Super Mario Bros NES with PPO - requires ROM import"
 environment:
   platform: retro
   game_id: super_mario_bros
-  n_envs: 8
+  n_envs: 16
   # Mario doesn't use arcade-style lives system
   terminal_on_life_loss: false
   state: null  # Uses default Level1-1

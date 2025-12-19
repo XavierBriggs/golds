@@ -1,0 +1,24 @@
+{
+  "job_name": "02_mortal_kombat_ii_ppo",
+  "config": "configs/games/mortal_kombat_ii.yaml",
+  "config_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/mortal_kombat_ii.yaml",
+  "resume_latest": true,
+  "resume_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs/mortal_kombat_ii/models/checkpoints/mortal_kombat_ii_1300000_steps.zip",
+  "start_time": "2025-12-18T19:05:56-0600",
+  "command": [
+    "uv",
+    "run",
+    "golds",
+    "train",
+    "run",
+    "--config",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/mortal_kombat_ii.yaml",
+    "--output",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs",
+    "--resume",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs/mortal_kombat_ii/models/checkpoints/mortal_kombat_ii_1300000_steps.zip"
+  ],
+  "end_time": "2025-12-18T22:13:07-0600",
+  "exit_code_train": 0,
+  "exit_code_tee": 0
+}

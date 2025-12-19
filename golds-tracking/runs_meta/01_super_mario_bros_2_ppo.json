@@ -1,0 +1,24 @@
+{
+  "job_name": "01_super_mario_bros_2_ppo",
+  "config": "configs/games/super_mario_bros_2_japan.yaml",
+  "config_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/super_mario_bros_2_japan.yaml",
+  "resume_latest": true,
+  "resume_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs/super_mario_bros_2_japan/models/checkpoints/super_mario_bros_2_japan_7800000_steps.zip",
+  "start_time": "2025-12-18T13:07:24-0600",
+  "command": [
+    "uv",
+    "run",
+    "golds",
+    "train",
+    "run",
+    "--config",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/super_mario_bros_2_japan.yaml",
+    "--output",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs",
+    "--resume",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs/super_mario_bros_2_japan/models/checkpoints/super_mario_bros_2_japan_7800000_steps.zip"
+  ],
+  "end_time": "2025-12-18T19:05:56-0600",
+  "exit_code_train": 0,
+  "exit_code_tee": 0
+}

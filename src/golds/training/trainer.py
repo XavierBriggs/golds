@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -133,27 +135,31 @@ class Trainer:
         """
         callbacks = []
 
-        # Evaluation callback
-        eval_callback = create_eval_callback(
-            eval_env=eval_env,
-            log_dir=self.output_dir,
-            eval_freq=self.config.training.eval_freq,
-            n_eval_episodes=self.config.training.eval_episodes,
-            n_envs=self.config.environment.n_envs,
-        )
-        callbacks.append(eval_callback)
+        # Evaluation callback (optional)
+        if self.config.training.eval_freq > 0:
+            eval_callback = create_eval_callback(
+                eval_env=eval_env,
+                log_dir=self.output_dir,
+                eval_freq=self.config.training.eval_freq,
+                n_eval_episodes=self.config.training.eval_episodes,
+                n_envs=self.config.environment.n_envs,
+            )
+            callbacks.append(eval_callback)
 
-        # Checkpoint callback
-        checkpoint_callback = CheckpointCallback(
-            save_freq=self.config.training.save_freq // self.config.environment.n_envs,
-            save_path=str(self.checkpoint_dir),
-            name_prefix=self.config.name,
-        )
-        callbacks.append(checkpoint_callback)
+        # Checkpoint callback (optional)
+        if self.config.training.save_freq > 0:
+            checkpoint_callback = CheckpointCallback(
+                save_freq=max(
+                    1, self.config.training.save_freq // self.config.environment.n_envs
+                ),
+                save_path=str(self.checkpoint_dir),
+                name_prefix=self.config.name,
+            )
+            callbacks.append(checkpoint_callback)
 
         # Training reward callback
         reward_callback = SaveOnBestTrainingRewardCallback(
-            check_freq=10_000 // self.config.environment.n_envs,
+            check_freq=max(1, 10_000 // self.config.environment.n_envs),
             log_dir=self.model_dir / "best_training",
             model_name="best_training_model",
         )
@@ -168,6 +174,79 @@ class Trainer:
 
         return CallbackList(callbacks)
 
+    def _check_output_disk_space(self) -> None:
+        """Fail fast when the output filesystem is likely to run out of space.
+
+        On Windows-mounted filesystems under WSL (e.g. `/mnt/c`), disk-full
+        conditions sometimes surface as `OSError: [Errno 5] Input/output error`
+        during checkpoint saves.
+        """
+        ignore = os.environ.get("GOLDS_IGNORE_DISK_SPACE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if ignore:
+            return
+
+        try:
+            usage = shutil.disk_usage(self.output_dir)
+        except Exception:
+            # If we cannot determine disk usage, don't block training.
+            return
+
+        free = usage.free
+        total = usage.total
+        used = usage.used
+        used_pct = (used / total) * 100 if total else 0.0
+
+        # Require more headroom when we are writing frequent artifacts.
+        # (TensorBoard logs, eval logs, best model, checkpoints, final model)
+        min_free_bytes = 2 * 1024**3  # 2 GiB
+        if free >= min_free_bytes and used_pct < 99.5:
+            return
+
+        out = self.output_dir.resolve().as_posix()
+        is_wsl_windows_mount = out.startswith("/mnt/") and len(out.split("/", 3)) >= 3
+
+        def fmt(n: int) -> str:
+            for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
+                if n < 1024:
+                    return f"{n:.1f} {unit}"
+                n /= 1024
+            return f"{n:.1f} PiB"
+
+        hint = (
+            "Free up disk space or change the output directory to a Linux filesystem "
+            "(recommended under WSL)."
+        )
+        if is_wsl_windows_mount:
+            hint += " Example: `uv run golds train run ... --output ~/golds_outputs`"
+
+        msg = (
+            f"Low disk space for training outputs.\n"
+            f"- Output dir: {self.output_dir}\n"
+            f"- Free: {fmt(int(free))} / Total: {fmt(int(total))} ({used_pct:.1f}% used)\n"
+            f"- {hint}\n"
+            f"- Set `GOLDS_IGNORE_DISK_SPACE=1` to bypass this check."
+        )
+
+        raise RuntimeError(msg)
+
+    @staticmethod
+    def _reraise_storage_error(exc: OSError, context: str) -> None:
+        errno = getattr(exc, "errno", None)
+        if errno not in {5, 28}:
+            raise
+
+        raise RuntimeError(
+            f"{context} failed due to a filesystem I/O error ({exc}).\n"
+            "This is commonly caused by running out of disk space on Windows-mounted "
+            "drives under WSL.\n"
+            "Fix: free disk space, or run training with `--output` pointing to a Linux "
+            "filesystem path (e.g. `~/golds_outputs`)."
+        ) from exc
+
     def train(self) -> PPO:
         """Execute training.
 
@@ -180,6 +259,9 @@ class Trainer:
         console.print(f"Timesteps: {self.config.training.total_timesteps:,}")
         console.print(f"Parallel envs: {self.config.environment.n_envs}")
         console.print()
+
+        # Fail fast if the output filesystem is close to full.
+        self._check_output_disk_space()
 
         # Create environments
         console.print("[cyan]Creating environments...[/cyan]")
@@ -198,17 +280,43 @@ class Trainer:
             console.print("[bold green]Starting training loop...[/bold green]")
             console.print()
 
-            model.learn(
-                total_timesteps=self.config.training.total_timesteps,
-                callback=callbacks,
-                log_interval=self.config.training.log_interval,
-                tb_log_name=self.config.name,
-                reset_num_timesteps=self.resume_from is None,
-            )
+            try:
+                total_timesteps = self.config.training.total_timesteps
+                if self.resume_from is not None:
+                    # SB3 `learn(total_timesteps=...)` interprets `total_timesteps` as
+                    # "additional timesteps" when `reset_num_timesteps=False` by adding
+                    # the current `model.num_timesteps` internally. We want config
+                    # `total_timesteps` to behave like a target total, so we convert
+                    # it into a "remaining timesteps" budget here.
+                    already = int(getattr(model, "num_timesteps", 0) or 0)
+                    remaining = max(0, total_timesteps - already)
+                    console.print(
+                        f"[yellow]Resume progress: {already:,}/{total_timesteps:,} "
+                        f"(remaining: {remaining:,})[/yellow]"
+                    )
+                    total_timesteps = remaining
+
+                if total_timesteps <= 0:
+                    console.print(
+                        "[yellow]Target timesteps already reached; skipping training loop.[/yellow]"
+                    )
+                else:
+                    model.learn(
+                        total_timesteps=total_timesteps,
+                        callback=callbacks,
+                        log_interval=self.config.training.log_interval,
+                        tb_log_name=self.config.name,
+                        reset_num_timesteps=self.resume_from is None,
+                    )
+            except OSError as e:
+                self._reraise_storage_error(e, "Training (checkpoint/log save)")
 
             # Save final model
             final_model_path = self.model_dir / "final_model"
-            model.save(final_model_path)
+            try:
+                model.save(final_model_path)
+            except OSError as e:
+                self._reraise_storage_error(e, "Final model save")
             console.print(f"[green]Final model saved to: {final_model_path}[/green]")
 
             return model

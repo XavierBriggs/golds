@@ -6,7 +6,7 @@ description: "Super Mario Bros. 2 Japan (Lost Levels) NES with PPO - requires RO
 environment:
   platform: retro
   game_id: super_mario_bros_2_japan
-  n_envs: 8
+  n_envs: 16
   terminal_on_life_loss: false
   state: null  # Uses default Level1-1
 

@@ -57,11 +57,15 @@ class TrainingConfig(BaseModel):
         default=10_000_000, ge=1, description="Total training timesteps"
     )
     eval_freq: int = Field(
-        default=50_000, ge=1, description="Evaluation frequency (timesteps)"
+        default=50_000,
+        ge=0,
+        description="Evaluation frequency (timesteps); 0 disables evaluation",
     )
     eval_episodes: int = Field(default=10, ge=1, description="Episodes per evaluation")
     save_freq: int = Field(
-        default=100_000, ge=1, description="Checkpoint frequency (timesteps)"
+        default=100_000,
+        ge=0,
+        description="Checkpoint frequency (timesteps); 0 disables checkpointing",
     )
     log_interval: int = Field(default=1, ge=1, description="Logging interval (updates)")
     seed: Optional[int] = Field(default=None, description="Random seed")

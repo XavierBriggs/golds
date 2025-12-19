@@ -6,7 +6,7 @@ description: "Breakout Atari 2600 - classic paddle game"
 environment:
   platform: atari
   game_id: breakout
-  n_envs: 8
+  n_envs: 16
   terminal_on_life_loss: true
 
 ppo:
@@ -15,6 +15,6 @@ ppo:
   ent_coef: 0.01
 
 training:
-  total_timesteps: 10000000
+  total_timesteps: 15000000
   eval_freq: 50000
   seed: 42

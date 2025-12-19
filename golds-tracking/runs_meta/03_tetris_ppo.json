@@ -1,0 +1,22 @@
+{
+  "job_name": "03_tetris_ppo",
+  "config": "configs/games/tetris.yaml",
+  "config_resolved": "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/tetris.yaml",
+  "resume_latest": true,
+  "resume_resolved": null,
+  "start_time": "2025-12-18T22:13:07-0600",
+  "command": [
+    "uv",
+    "run",
+    "golds",
+    "train",
+    "run",
+    "--config",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/configs/games/tetris.yaml",
+    "--output",
+    "/mnt/c/Users/ironb_68qna1s/Development/golds/outputs"
+  ],
+  "end_time": "2025-12-19T00:45:09-0600",
+  "exit_code_train": 0,
+  "exit_code_tee": 0
+}

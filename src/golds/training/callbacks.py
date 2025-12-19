@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import VecMonitor, is_vecenv_wrapped
 from stable_baselines3.common.vec_env import VecEnv
 
 
@@ -158,11 +159,20 @@ def create_eval_callback(
     best_model_dir.mkdir(parents=True, exist_ok=True)
     eval_log_dir.mkdir(parents=True, exist_ok=True)
 
+    # Ensure SB3 evaluation sees a Monitor wrapper (suppresses warning and makes
+    # episode stats consistent if other wrappers modify rewards/lengths).
+    try:
+        is_monitor_wrapped = is_vecenv_wrapped(eval_env, VecMonitor) or eval_env.env_is_wrapped(Monitor)[0]
+    except Exception:
+        is_monitor_wrapped = False
+    if not is_monitor_wrapped:
+        eval_env = VecMonitor(eval_env)
+
     return EvalCallback(
         eval_env,
         best_model_save_path=str(best_model_dir),
         log_path=str(eval_log_dir),
-        eval_freq=eval_freq // n_envs,  # Adjust for vectorized env
+        eval_freq=max(1, eval_freq // n_envs),  # Adjust for vectorized env
         n_eval_episodes=n_eval_episodes,
         deterministic=True,
         render=False,
