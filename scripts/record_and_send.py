@@ -4,15 +4,14 @@ import os
 import sys
 
 import cv2
-import gymnasium as gym
 import numpy as np
 from stable_baselines3 import PPO
-from stable_baselines3.common.atari_wrappers import AtariWrapper
-from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack, VecTransposeImage
+from golds.environments.factory import EnvironmentFactory
 from golds.environments.registry import GameRegistry
 
 game = sys.argv[1] if len(sys.argv) > 1 else "ms_pacman"
 steps = int(sys.argv[2]) if len(sys.argv) > 2 else 3000
+SCALE = 4
 
 # Find latest best model
 candidates = sorted(glob.glob(f"outputs/{game}*/best/best_model.zip"))
@@ -29,112 +28,85 @@ if not candidates:
 model_path = candidates[-1]
 print(f"Model: {model_path}")
 
+# Create a SINGLE unwrapped env for both playing and recording
 game_info = GameRegistry.get(game)
 
 if game_info.platform == "atari":
-    # Register ALE envs
+    import gymnasium as gym
     import ale_py
-    ale_py.register_v0_v4_envs()
-    from golds.environments.atari.env_id import resolve_atari_env_id
-    env_id = resolve_atari_env_id(game_info.env_id)
-
-    # Create env with render_mode for recording
-    base_env = gym.make(env_id, render_mode="rgb_array")
-
-    # Wrap for the model (AtariWrapper does preprocessing)
-    wrapped = AtariWrapper(base_env)
-    vec_env = DummyVecEnv([lambda: wrapped])
-    vec_env = VecFrameStack(vec_env, n_stack=4)
-    vec_env = VecTransposeImage(vec_env)
-
-    model = PPO.load(model_path, env=vec_env)
-    obs = vec_env.reset()
-
-    os.makedirs("videos", exist_ok=True)
-    mp4_path = f"videos/{game}.mp4"
-    writer = None
-
-    SCALE = 4
-    print(f"Recording {steps} frames (upscaled {SCALE}x)...")
-    for i in range(steps):
-        # Get the ORIGINAL frame from the base env (before wrappers)
-        frame = base_env.render()
-        if frame is not None:
-            frame = np.asarray(frame)
-            # Upscale with nearest neighbor (crisp pixels, no blur)
-            frame = cv2.resize(frame, (frame.shape[1] * SCALE, frame.shape[0] * SCALE),
-                               interpolation=cv2.INTER_NEAREST)
-            if writer is None:
-                h, w = frame.shape[0], frame.shape[1]
-                writer = cv2.VideoWriter(mp4_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
-                print(f"Video: {w}x{h}")
-            writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-
-        action, _ = model.predict(obs, deterministic=True)
-        obs, _, dones, _ = vec_env.step(action)
-        if dones[0]:
-            obs = vec_env.reset()
-
-    vec_env.close()
-    if writer:
-        writer.release()
-
+    if f"{game_info.env_id}" not in gym.envs.registry:
+        ale_py.register_v0_v4_envs()
+    raw_env = gym.make(game_info.env_id, render_mode="rgb_array")
 else:
-    # Retro games
-    try:
-        import retro
-    except ImportError:
-        print("stable-retro not installed")
-        sys.exit(1)
-
-    base_env = retro.make(
+    import retro
+    raw_env = retro.make(
         game=game_info.env_id,
         state=game_info.default_state or retro.State.DEFAULT,
         render_mode="rgb_array",
     )
 
-    # Import retro preprocessing
-    from golds.environments.retro.maker import RetroPreprocessing, FrameSkip
-    from stable_baselines3.common.monitor import Monitor
+# Also create the wrapped env for the model
+env = EnvironmentFactory.create_eval_env(game_id=game, frame_stack=4, seed=0)
+model = PPO.load(model_path, env=env)
 
-    proc_env = Monitor(base_env)
-    proc_env = FrameSkip(proc_env, skip=4)
-    proc_env = RetroPreprocessing(proc_env)
-    vec_env = DummyVecEnv([lambda: proc_env])
-    vec_env = VecFrameStack(vec_env, n_stack=4)
-    vec_env = VecTransposeImage(vec_env)
+# Play in the wrapped env, render from raw env by replaying actions
+obs = env.reset()
+raw_env.reset()
 
-    model = PPO.load(model_path, env=vec_env)
-    obs = vec_env.reset()
+os.makedirs("videos", exist_ok=True)
+mp4_path = f"videos/{game}.mp4"
+writer = None
 
-    os.makedirs("videos", exist_ok=True)
-    mp4_path = f"videos/{game}.mp4"
-    writer = None
+print(f"Recording {steps} frames (upscaled {SCALE}x)...")
+for i in range(steps):
+    # Predict action from the model
+    action, _ = model.predict(obs, deterministic=True)
 
-    SCALE = 3
-    print(f"Recording {steps} frames (upscaled {SCALE}x)...")
-    for i in range(steps):
-        frame = base_env.render()
-        if frame is not None:
-            frame = np.asarray(frame)
-            frame = cv2.resize(frame, (frame.shape[1] * SCALE, frame.shape[0] * SCALE),
-                               interpolation=cv2.INTER_NEAREST)
-            if writer is None:
-                h, w = frame.shape[0], frame.shape[1]
-                writer = cv2.VideoWriter(mp4_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
-                print(f"Video: {w}x{h}")
-            writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    # Step the wrapped env (model's env)
+    obs, _, dones, infos = env.step(action)
 
-        action, _ = model.predict(obs, deterministic=True)
-        obs, _, dones, _ = vec_env.step(action)
-        if dones[0]:
-            obs = vec_env.reset()
+    # Render from raw env AFTER stepping
+    # We need to get the raw frame somehow - use the wrapped env's underlying render
+    # The VecEnv wraps a DummyVecEnv which wraps the actual gym env
+    # Access the underlying env chain to get the raw render
+    try:
+        # Walk the wrapper chain to get the base ALE/retro env render
+        inner = env
+        while hasattr(inner, 'venv'):
+            inner = inner.venv
+        while hasattr(inner, 'envs'):
+            inner = inner.envs[0]
+        # Now inner should be the gym.Env (possibly wrapped)
+        # Get the unwrapped env for rendering
+        base = inner.unwrapped if hasattr(inner, 'unwrapped') else inner
+        frame = base.render()
+    except Exception:
+        frame = None
 
-    vec_env.close()
-    if writer:
-        writer.release()
+    if frame is not None:
+        frame = np.asarray(frame)
+        if frame.ndim == 2:
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        # Upscale
+        frame = cv2.resize(frame, (frame.shape[1] * SCALE, frame.shape[0] * SCALE),
+                           interpolation=cv2.INTER_NEAREST)
+        if writer is None:
+            h, w = frame.shape[0], frame.shape[1]
+            writer = cv2.VideoWriter(mp4_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
+            print(f"Video: {w}x{h}")
+        writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
-print(f"Saved: {mp4_path}")
+    if dones[0]:
+        obs = env.reset()
+
+env.close()
+raw_env.close()
+if writer:
+    writer.release()
+    print(f"Saved: {mp4_path}")
+else:
+    print("ERROR: No frames captured")
+    sys.exit(1)
 
 # Send to Telegram
 try:
