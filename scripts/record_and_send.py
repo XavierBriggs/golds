@@ -54,12 +54,16 @@ if game_info.platform == "atari":
     mp4_path = f"videos/{game}.mp4"
     writer = None
 
-    print(f"Recording {steps} frames...")
+    SCALE = 4
+    print(f"Recording {steps} frames (upscaled {SCALE}x)...")
     for i in range(steps):
         # Get the ORIGINAL frame from the base env (before wrappers)
         frame = base_env.render()
         if frame is not None:
             frame = np.asarray(frame)
+            # Upscale with nearest neighbor (crisp pixels, no blur)
+            frame = cv2.resize(frame, (frame.shape[1] * SCALE, frame.shape[0] * SCALE),
+                               interpolation=cv2.INTER_NEAREST)
             if writer is None:
                 h, w = frame.shape[0], frame.shape[1]
                 writer = cv2.VideoWriter(mp4_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
@@ -107,11 +111,14 @@ else:
     mp4_path = f"videos/{game}.mp4"
     writer = None
 
-    print(f"Recording {steps} frames...")
+    SCALE = 3
+    print(f"Recording {steps} frames (upscaled {SCALE}x)...")
     for i in range(steps):
         frame = base_env.render()
         if frame is not None:
             frame = np.asarray(frame)
+            frame = cv2.resize(frame, (frame.shape[1] * SCALE, frame.shape[0] * SCALE),
+                               interpolation=cv2.INTER_NEAREST)
             if writer is None:
                 h, w = frame.shape[0], frame.shape[1]
                 writer = cv2.VideoWriter(mp4_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
