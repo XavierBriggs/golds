@@ -245,117 +245,236 @@ def train_all(
 
 
 def setup() -> None:
-    """Set up GOLDS: check dependencies, import ROMs, verify pipeline."""
-    from golds.utils.device import get_device, get_device_info
+    """Set up GOLDS: install deps, import ROMs, verify pipeline."""
+    import shutil
+    import subprocess
 
     console.print(Panel("[bold]GOLDS Setup[/bold]", border_style="cyan"))
     console.print()
 
     issues: list[str] = []
 
-    # 1. Check device
+    # 1. Install dependencies
+    console.print("[cyan]1. Installing dependencies...[/cyan]")
+    try:
+        result = subprocess.run(
+            ["uv", "sync", "--dev"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            console.print("[green]   Dependencies installed[/green]")
+        else:
+            console.print(f"[yellow]   uv sync had issues: {result.stderr.strip()[:200]}[/yellow]")
+    except FileNotFoundError:
+        console.print("[yellow]   uv not found, skipping dependency install[/yellow]")
+    except Exception as e:
+        console.print(f"[yellow]   Dependency install skipped: {e}[/yellow]")
+
+    # 2. Check device
+    from golds.utils.device import get_device, get_device_info
+
     info = get_device_info()
     device = get_device()
     if device == "cuda":
-        console.print(f"[green]1. GPU:[/green] CUDA - {info.get('cuda_device_name', 'unknown')}")
+        console.print(f"[green]2. GPU:[/green] CUDA - {info.get('cuda_device_name', 'unknown')}")
     elif device == "mps":
-        console.print("[green]1. GPU:[/green] Apple Silicon (MPS)")
+        console.print("[green]2. GPU:[/green] Apple Silicon (MPS)")
     else:
-        console.print("[yellow]1. GPU:[/yellow] None detected, will use CPU (slow)")
+        console.print("[yellow]2. GPU:[/yellow] None detected, will use CPU (slow)")
         issues.append("No GPU - training will be slow")
 
-    # 2. Check ale-py (Atari)
+    # 3. Check ale-py (Atari)
     try:
         import ale_py  # noqa: F401
 
-        console.print("[green]2. Atari (ale-py):[/green] Installed - Atari games ready")
+        console.print("[green]3. Atari (ale-py):[/green] Installed")
     except ImportError:
-        console.print("[red]2. Atari (ale-py):[/red] Not installed")
+        console.print("[red]3. Atari (ale-py):[/red] Not installed")
         issues.append("Install ale-py: uv pip install 'gymnasium[atari]' ale-py")
 
-    # 3. Check stable-retro
+    # 4. Check stable-retro + auto-import ROMs
+    retro_available = False
     try:
         import retro
 
+        retro_available = True
         game_count = len(retro.data.list_games())
-        console.print(
-            f"[green]3. Retro (stable-retro):[/green] Installed - {game_count} ROMs available"
-        )
-        if game_count == 0:
-            console.print("   [yellow]No ROMs imported yet.[/yellow]")
-            issues.append("Import ROMs: golds rom import ./roms")
+        console.print(f"[green]4. Retro (stable-retro):[/green] Installed - {game_count} games")
+
+        # Auto-import ROMs from ./roms if they exist
+        roms_dir = Path("roms")
+        rom_files = []
+        if roms_dir.exists():
+            rom_files = (
+                list(roms_dir.glob("*.nes"))
+                + list(roms_dir.glob("*.gen"))
+                + list(roms_dir.glob("*.gb"))
+                + list(roms_dir.glob("*.sfc"))
+                + list(roms_dir.glob("*.smc"))
+            )
+
+        if rom_files:
+            console.print(
+                f"   [cyan]Found {len(rom_files)} ROM files in roms/, importing...[/cyan]"
+            )
+            try:
+                result = subprocess.run(
+                    ["python", "-m", "retro.import", str(roms_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                # Re-check game count after import
+                new_count = len(retro.data.list_games())
+                imported = new_count - game_count
+                if imported > 0:
+                    console.print(
+                        f"   [green]Imported {imported} new games ({new_count} total)[/green]"
+                    )
+                else:
+                    console.print(
+                        "   [dim]No new games imported (ROMs may already be imported or SHAs don't match)[/dim]"
+                    )
+            except Exception as e:
+                console.print(f"   [yellow]ROM import failed: {e}[/yellow]")
+        elif game_count == 0:
+            console.print(
+                "   [yellow]No ROMs found. Place ROM files in roms/ and re-run setup.[/yellow]"
+            )
     except ImportError:
         console.print(
-            "[yellow]3. Retro (stable-retro):[/yellow] Not installed"
+            "[yellow]4. Retro (stable-retro):[/yellow] Not installed"
             " (NES/SNES/Genesis games unavailable)"
         )
         issues.append("For retro games: uv pip install stable-retro")
 
-    # 4. Check sb3-contrib
+    # 5. Check sb3-contrib
     try:
         import sb3_contrib  # noqa: F401
 
-        console.print("[green]4. sb3-contrib:[/green] Installed (RecurrentPPO available)")
+        console.print("[green]5. sb3-contrib:[/green] Installed (RecurrentPPO available)")
     except ImportError:
-        console.print("[yellow]4. sb3-contrib:[/yellow] Not installed (optional)")
+        console.print("[yellow]5. sb3-contrib:[/yellow] Not installed (optional)")
 
-    # 5. Check configs
+    # 6. Check configs
     configs_dir = Path("configs/games")
     if configs_dir.exists():
         config_count = len(list(configs_dir.glob("*.yaml")))
-        console.print(f"[green]5. Configs:[/green] {config_count} game configs found")
+        console.print(f"[green]6. Configs:[/green] {config_count} game configs found")
     else:
-        console.print("[red]5. Configs:[/red] No configs/games/ directory")
+        console.print("[red]6. Configs:[/red] No configs/games/ directory")
         issues.append("Missing configs directory")
 
-    # 6. Disk space
-    import shutil
-
+    # 7. Disk space
     usage = shutil.disk_usage(".")
     free_gb = usage.free / (1024**3)
     if free_gb > 5:
-        console.print(f"[green]6. Disk:[/green] {free_gb:.1f} GB free")
+        console.print(f"[green]7. Disk:[/green] {free_gb:.1f} GB free")
     else:
-        console.print(f"[yellow]6. Disk:[/yellow] {free_gb:.1f} GB free (recommend >5 GB)")
+        console.print(f"[yellow]7. Disk:[/yellow] {free_gb:.1f} GB free (recommend >5 GB)")
         issues.append("Low disk space")
 
-    # 7. Quick pipeline test
-    console.print("\n[cyan]Running pipeline test (Pong preflight)...[/cyan]")
+    # 8. Quick pipeline test
+    console.print("\n[cyan]8. Running pipeline test (Pong preflight)...[/cyan]")
     try:
         from golds.environments.factory import EnvironmentFactory
 
-        env = EnvironmentFactory.create(
-            game_id="pong", n_envs=1, frame_stack=4, use_subproc=False
-        )
+        env = EnvironmentFactory.create(game_id="pong", n_envs=1, frame_stack=4, use_subproc=False)
         env.reset()
         env.step([env.action_space.sample()])
         env.close()
-        console.print("[green]7. Pipeline test:[/green] PASSED")
+        console.print("[green]   Pipeline test: PASSED[/green]")
     except Exception as e:
-        console.print(f"[red]7. Pipeline test:[/red] FAILED - {e}")
+        console.print(f"[red]   Pipeline test: FAILED - {e}[/red]")
         issues.append(f"Pipeline test failed: {e}")
+
+    # 9. Telegram test
+    console.print("\n[cyan]9. Testing Telegram notifications...[/cyan]")
+    try:
+        from golds.notifications.telegram import TelegramNotifier
+
+        notifier = TelegramNotifier()
+        if notifier.enabled:
+            sent = notifier.send("GOLDS setup complete - notifications working!")
+            if sent:
+                console.print("[green]   Telegram: Connected[/green]")
+            else:
+                console.print(
+                    "[yellow]   Telegram: Configured but couldn't send (network issue?)[/yellow]"
+                )
+        else:
+            console.print("[dim]   Telegram: Not configured (set GOLDS_TELEGRAM_CHAT_ID)[/dim]")
+    except Exception:
+        console.print("[dim]   Telegram: Skipped[/dim]")
 
     # Summary
     console.print()
+
+    # Show what's ready to train
+    ready_games: list[str] = []
+    atari_games = [
+        "pong",
+        "breakout",
+        "space_invaders",
+        "ms_pacman",
+        "enduro",
+        "frostbite",
+        "montezuma_revenge",
+    ]
+    retro_games_map = {
+        "super_mario_bros_2_japan": "SuperMarioBros2Japan-Nes",
+        "sonic_the_hedgehog": "SonicTheHedgehog-Genesis",
+        "mortal_kombat_ii": "MortalKombatII-Genesis",
+        "tetris": "Tetris-GameBoy",
+        "super_mario_bros": "SuperMarioBros-Nes",
+        "street_fighter_ii": "StreetFighterIISpecialChampionEdition-Genesis",
+        "mega_man_2": "MegaMan2-Nes",
+    }
+
+    # Atari games are always ready if ale-py is installed
+    try:
+        import ale_py  # noqa: F401
+
+        ready_games.extend(g for g in atari_games if (configs_dir / f"{g}.yaml").exists())
+    except ImportError:
+        pass
+
+    # Retro games need ROM imported
+    if retro_available:
+        import retro as retro_mod
+
+        available = set(retro_mod.data.list_games())
+        for game_id, retro_name in retro_games_map.items():
+            if retro_name in available and (configs_dir / f"{game_id}.yaml").exists():
+                ready_games.append(game_id)
+
     if issues:
         console.print(
             Panel(
                 "\n".join(f"  - {i}" for i in issues),
-                title="Issues to fix",
+                title="Issues",
                 border_style="yellow",
+            )
+        )
+
+    if ready_games:
+        games_str = ",".join(ready_games)
+        console.print(
+            Panel(
+                f"[bold]{len(ready_games)} games ready to train:[/bold]\n"
+                f"  {', '.join(ready_games)}\n\n"
+                f"Start training:\n"
+                f"  [cyan]golds go pong[/cyan]                          # Single game\n"
+                f"  [cyan]golds train-all --games {games_str}[/cyan]",
+                title="Ready!",
+                border_style="green",
             )
         )
     else:
         console.print(
-            Panel(
-                "Everything looks good! Start training with:\n\n"
-                "  [cyan]golds go pong[/cyan]              # Train Pong\n"
-                "  [cyan]golds go breakout[/cyan]           # Train Breakout\n"
-                "  [cyan]golds train-all[/cyan]             # Train all games\n"
-                "  [cyan]golds status[/cyan]                # Check progress",
-                title="Ready!",
-                border_style="green",
-            )
+            "[yellow]No games ready to train. Fix the issues above and re-run setup.[/yellow]"
         )
 
 
@@ -415,9 +534,7 @@ def status() -> None:
             else:
                 status_str = f"[yellow]{pct:.0f}%[/yellow]"
 
-            reward_str = (
-                f"{info['best_reward']:.1f}" if info["best_reward"] is not None else "N/A"
-            )
+            reward_str = f"{info['best_reward']:.1f}" if info["best_reward"] is not None else "N/A"
             hns = human_normalized_score(game_id, info["best_reward"] or 0)
             hns_str = f"{hns:.2f}" if hns is not None else "-"
             hours = info["wall_time"] / 3600 if info["wall_time"] else 0

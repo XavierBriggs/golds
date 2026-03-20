@@ -71,12 +71,15 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
 
 
 class ProgressCallback(BaseCallback):
-    """Callback for displaying training progress."""
+    """Callback for displaying training progress and sending Telegram updates."""
 
     def __init__(
         self,
         total_timesteps: int,
         display_freq: int = 10_000,
+        telegram_freq: int = 1_000_000,
+        game_id: str = "",
+        experiment_name: str = "",
         verbose: int = 1,
     ) -> None:
         """Initialize callback.
@@ -84,20 +87,53 @@ class ProgressCallback(BaseCallback):
         Args:
             total_timesteps: Total training timesteps
             display_freq: Display progress every N timesteps
+            telegram_freq: Send Telegram update every N timesteps
+            game_id: Game identifier for Telegram messages
+            experiment_name: Experiment name for Telegram messages
             verbose: Verbosity level
         """
         super().__init__(verbose)
         self.total_timesteps = total_timesteps
         self.display_freq = display_freq
+        self.telegram_freq = telegram_freq
+        self.game_id = game_id
+        self.experiment_name = experiment_name
+        self._last_telegram_step = 0
 
     def _on_step(self) -> bool:
-        """Display progress."""
+        """Display progress and send Telegram updates."""
         if self.num_timesteps % self.display_freq == 0:
             progress = self.num_timesteps / self.total_timesteps * 100
             if self.verbose > 0:
                 print(
                     f"Progress: {self.num_timesteps:,}/{self.total_timesteps:,} ({progress:.1f}%)"
                 )
+
+        # Telegram update every telegram_freq steps
+        if (
+            self.telegram_freq > 0
+            and self.num_timesteps - self._last_telegram_step >= self.telegram_freq
+        ):
+            self._last_telegram_step = self.num_timesteps
+            progress = self.num_timesteps / self.total_timesteps * 100
+            # Get current mean reward if available
+            reward_str = ""
+            if len(self.model.ep_info_buffer) > 0:
+                mean_reward = np.mean([ep["r"] for ep in self.model.ep_info_buffer])
+                reward_str = f"\nMean Reward: {mean_reward:.1f}"
+            try:
+                from golds.notifications.telegram import TelegramNotifier
+
+                notifier = TelegramNotifier()
+                notifier.send(
+                    f"📊 <b>Progress Update</b>\n"
+                    f"Game: {self.game_id}\n"
+                    f"Steps: {self.num_timesteps:,}/{self.total_timesteps:,} ({progress:.0f}%)"
+                    f"{reward_str}"
+                )
+            except Exception:
+                pass
+
         return True
 
 

@@ -218,10 +218,13 @@ class Trainer:
         )
         callbacks.append(reward_callback)
 
-        # Progress callback
+        # Progress callback (with Telegram updates every 1M steps)
         progress_callback = ProgressCallback(
             total_timesteps=self.config.training.total_timesteps,
             display_freq=50_000,
+            telegram_freq=1_000_000,
+            game_id=self.config.environment.game_id,
+            experiment_name=self.config.name,
         )
         callbacks.append(progress_callback)
 
