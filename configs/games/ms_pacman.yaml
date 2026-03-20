@@ -1,0 +1,23 @@
+# Ms. Pac-Man (Atari) Configuration
+
+name: ms_pacman
+description: "Ms. Pac-Man Atari 2600 - classic maze game"
+
+environment:
+  platform: atari
+  game_id: ms_pacman
+  n_envs: 16
+  terminal_on_life_loss: true
+  reward_regime: clipped
+
+ppo:
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.01
+
+training:
+  total_timesteps: 30000000
+  eval_freq: 100000
+  eval_episodes: 10
+  save_freq: 500000
+  seed: 42

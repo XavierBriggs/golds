@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -14,16 +13,10 @@ console = Console()
 
 @train_app.command("run")
 def train_run(
-    config: Path = typer.Option(
-        ..., "--config", "-c", help="Path to experiment config file"
-    ),
-    output: Path = typer.Option(
-        Path("outputs"), "--output", "-o", help="Output directory"
-    ),
-    resume: Optional[Path] = typer.Option(
-        None, "--resume", "-r", help="Resume from checkpoint"
-    ),
-    seed: Optional[int] = typer.Option(None, "--seed", "-s", help="Override random seed"),
+    config: Path = typer.Option(..., "--config", "-c", help="Path to experiment config file"),
+    output: Path = typer.Option(Path("outputs"), "--output", "-o", help="Output directory"),
+    resume: Path | None = typer.Option(None, "--resume", "-r", help="Resume from checkpoint"),
+    seed: int | None = typer.Option(None, "--seed", "-s", help="Override random seed"),
     device: str = typer.Option("auto", "--device", "-d", help="Device: auto, cuda, cpu"),
 ) -> None:
     """Run training with a configuration file."""
@@ -55,20 +48,14 @@ def train_run(
 
 @train_app.command("preflight")
 def train_preflight(
-    config: Path = typer.Option(
-        ..., "--config", "-c", help="Path to experiment config file"
-    ),
-    n_envs: int = typer.Option(
-        1, "--n-envs", help="Override n_envs for this check (default: 1)"
-    ),
+    config: Path = typer.Option(..., "--config", "-c", help="Path to experiment config file"),
+    n_envs: int = typer.Option(1, "--n-envs", help="Override n_envs for this check (default: 1)"),
     use_subproc: bool = typer.Option(
         False,
         "--use-subproc/--no-subproc",
         help="Whether to use SubprocVecEnv for the check (default: no-subproc)",
     ),
-    steps: int = typer.Option(
-        10, "--steps", help="Number of env steps to run (default: 10)"
-    ),
+    steps: int = typer.Option(10, "--steps", help="Number of env steps to run (default: 10)"),
 ) -> None:
     """Quickly verify that an experiment config can create envs and step them.
 
@@ -122,7 +109,7 @@ def train_preflight(
             )
             obs, _, dones, _ = train_env.step(action)
             if bool(np.any(dones)):
-                obs = train_env.reset()
+                train_env.reset()
 
         # Some emulators (notably `stable-retro`) cannot create multiple instances
         # in the same process. Close the train env before creating the eval env.
@@ -136,8 +123,12 @@ def train_preflight(
             seed=exp_config.training.seed,
             state=env_cfg.state,
             players=env_cfg.players,
-            opponent_mode="noop" if (env_cfg.players == 2 and env_cfg.opponent != "none") else env_cfg.opponent,
-            opponent_model_path=env_cfg.opponent_model_path if env_cfg.opponent not in {"none", "noop"} else None,
+            opponent_mode="noop"
+            if (env_cfg.players == 2 and env_cfg.opponent != "none")
+            else env_cfg.opponent,
+            opponent_model_path=env_cfg.opponent_model_path
+            if env_cfg.opponent not in {"none", "noop"}
+            else None,
             opponent_snapshot_dir=None,
         )
         _ = eval_env.reset()
@@ -159,14 +150,10 @@ def train_preflight(
 @train_app.command("game")
 def train_game(
     game: str = typer.Argument(..., help="Game ID (e.g., space_invaders)"),
-    timesteps: int = typer.Option(
-        10_000_000, "--timesteps", "-t", help="Total timesteps"
-    ),
+    timesteps: int = typer.Option(10_000_000, "--timesteps", "-t", help="Total timesteps"),
     envs: int = typer.Option(8, "--envs", "-n", help="Number of parallel environments"),
-    output: Path = typer.Option(
-        Path("outputs"), "--output", "-o", help="Output directory"
-    ),
-    seed: Optional[int] = typer.Option(None, "--seed", "-s", help="Random seed"),
+    output: Path = typer.Option(Path("outputs"), "--output", "-o", help="Output directory"),
+    seed: int | None = typer.Option(None, "--seed", "-s", help="Random seed"),
     device: str = typer.Option("auto", "--device", "-d", help="Device: auto, cuda, cpu"),
 ) -> None:
     """Quick training for a specific game with default settings."""
@@ -189,13 +176,10 @@ def train_game(
     if game_info.platform == "retro":
         try:
             import retro
+
             if game_info.env_id not in retro.data.list_games():
-                console.print(
-                    f"[red]ROM not found for {game_info.env_id}[/red]"
-                )
-                console.print(
-                    "\nTo import ROMs, place them in the 'roms' directory and run:"
-                )
+                console.print(f"[red]ROM not found for {game_info.env_id}[/red]")
+                console.print("\nTo import ROMs, place them in the 'roms' directory and run:")
                 console.print("  golds rom import ./roms")
                 raise typer.Exit(1)
         except ImportError:
@@ -225,9 +209,7 @@ def train_game(
 
 @train_app.command("list-configs")
 def list_configs(
-    config_dir: Path = typer.Option(
-        Path("configs/games"), "--dir", "-d", help="Config directory"
-    ),
+    config_dir: Path = typer.Option(Path("configs/games"), "--dir", "-d", help="Config directory"),
 ) -> None:
     """List available configuration files."""
     from rich.table import Table

@@ -8,6 +8,7 @@ environment:
   game_id: pong
   n_envs: 16
   terminal_on_life_loss: false  # Pong doesn't have lives
+  reward_regime: clipped
 
 ppo:
   learning_rate: 2.5e-4

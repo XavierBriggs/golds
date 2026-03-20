@@ -1,0 +1,24 @@
+# Montezuma's Revenge (Atari) Configuration
+# Hard exploration - sparse reward game
+
+name: montezuma_revenge
+description: "Montezuma's Revenge Atari 2600 - hard exploration benchmark"
+
+environment:
+  platform: atari
+  game_id: montezuma_revenge
+  n_envs: 16
+  terminal_on_life_loss: true
+  reward_regime: clipped
+
+ppo:
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.01
+
+training:
+  total_timesteps: 50000000
+  eval_freq: 100000
+  eval_episodes: 10
+  save_freq: 500000
+  seed: 42

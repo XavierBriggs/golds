@@ -7,7 +7,6 @@ primary wrapper is `VecTwoPlayerOpponentWrapper`.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -16,7 +15,6 @@ from zipfile import BadZipFile, ZipFile
 import gymnasium as gym
 import numpy as np
 from stable_baselines3.common.vec_env import VecEnv, VecEnvWrapper
-
 
 OpponentMode = Literal["none", "random", "noop", "model", "self_play"]
 
@@ -250,9 +248,7 @@ class VecTwoPlayerOpponentWrapper(VecEnvWrapper):
         if mode == "none" or mode == "noop":
             return np.zeros((num_envs, self._buttons_per_player), dtype=np.int8)
         if mode == "random":
-            return np.random.randint(
-                0, 2, size=(num_envs, self._buttons_per_player), dtype=np.int8
-            )
+            return np.random.randint(0, 2, size=(num_envs, self._buttons_per_player), dtype=np.int8)
 
         model = self._opponent_model
         if model is None:

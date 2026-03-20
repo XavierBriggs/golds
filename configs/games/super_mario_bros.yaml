@@ -10,6 +10,7 @@ environment:
   # Mario doesn't use arcade-style lives system
   terminal_on_life_loss: false
   state: null  # Uses default Level1-1
+  reward_regime: clipped
 
 ppo:
   # Slightly lower entropy for platformers

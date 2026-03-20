@@ -1,0 +1,27 @@
+[
+  {
+    "game_id": "pong",
+    "experiment_name": "pong_run",
+    "config_hash": "6ce2164d51db",
+    "round": 1,
+    "total_timesteps_completed": 100352,
+    "total_timesteps_target": 100000,
+    "wall_time_seconds": 220.60772449988872,
+    "best_eval_reward": null,
+    "final_eval_reward": null,
+    "eval_100ep": null,
+    "best_model_path": "outputs/test_pong/pong/best/best_model.zip",
+    "final_model_path": "outputs/test_pong/pong/models/final_model.zip",
+    "tensorboard_log_dir": "outputs/test_pong/pong/logs",
+    "device": "mps",
+    "n_envs": 16,
+    "started_at": "2026-03-20T00:21:40.971559",
+    "completed_at": "2026-03-20T00:21:40.971801",
+    "exit_code": 0,
+    "resumed_from": null,
+    "reward_regime": "clipped",
+    "human_score": null,
+    "human_normalized_score": null,
+    "published_ppo_score": null
+  }
+]

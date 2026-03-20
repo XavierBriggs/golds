@@ -12,6 +12,7 @@ environment:
   players: 2
   opponent: self_play
   state: Level1.LiuKangVsJax.2P
+  reward_regime: clipped
 
 ppo:
   learning_rate: 2.5e-4

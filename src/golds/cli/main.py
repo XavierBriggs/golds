@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from golds import __version__
-from golds.cli.train import train_app
 from golds.cli.evaluate import eval_app
+from golds.cli.results import results_app
 from golds.cli.roms import rom_app
+from golds.cli.shortcuts import go, setup, status, train_all
+from golds.cli.train import train_app
 
 console = Console()
 
@@ -27,11 +28,18 @@ app = typer.Typer(
 app.add_typer(train_app, name="train", help="Training commands")
 app.add_typer(eval_app, name="eval", help="Evaluation commands")
 app.add_typer(rom_app, name="rom", help="ROM management commands")
+app.add_typer(results_app, name="results", help="Training results management")
+
+# Shortcut commands
+app.command("go")(go)
+app.command("train-all")(train_all)
+app.command("setup")(setup)
+app.command("status")(status)
 
 
 @app.command("list-games")
 def list_games(
-    platform: Optional[str] = typer.Option(
+    platform: str | None = typer.Option(
         None, "--platform", "-p", help="Filter by platform (atari/retro)"
     ),
 ) -> None:
@@ -73,6 +81,7 @@ def info() -> None:
     # Check for stable-retro
     try:
         import retro
+
         retro_available = True
         retro_games = len(retro.data.list_games())
     except ImportError:
@@ -88,9 +97,7 @@ def info() -> None:
 
 @app.command("tensorboard")
 def tensorboard(
-    logdir: Path = typer.Option(
-        Path("outputs/logs"), "--logdir", "-l", help="Log directory"
-    ),
+    logdir: Path = typer.Option(Path("outputs/logs"), "--logdir", "-l", help="Log directory"),
     port: int = typer.Option(6006, "--port", "-p", help="Port number"),
 ) -> None:
     """Launch TensorBoard for viewing training logs."""
@@ -111,9 +118,7 @@ def tensorboard(
             check=True,
         )
     except FileNotFoundError:
-        console.print(
-            "[red]TensorBoard not found. Install with: pip install tensorboard[/red]"
-        )
+        console.print("[red]TensorBoard not found. Install with: pip install tensorboard[/red]")
         raise typer.Exit(1)
     except KeyboardInterrupt:
         console.print("\n[yellow]TensorBoard stopped.[/yellow]")
@@ -123,6 +128,77 @@ def tensorboard(
 def version() -> None:
     """Show version information."""
     console.print(f"GOLDS version {__version__}")
+
+
+@app.command()
+def doctor() -> None:
+    """Check system dependencies and configuration."""
+    from golds.utils.device import get_device_info
+
+    console.print("[bold]GOLDS System Check[/bold]\n")
+
+    # CUDA
+    info = get_device_info()
+    if info["cuda_available"]:
+        console.print(
+            f"[green]\u2713[/green] CUDA available: {info.get('cuda_device_name', 'unknown')}"
+        )
+    elif info.get("mps_available"):
+        console.print(
+            f"[green]\u2713[/green] MPS available: {info.get('mps_device_name', 'Apple Silicon GPU')}"
+        )
+    else:
+        console.print("[yellow]\u2717[/yellow] No GPU available (will use CPU)")
+
+    # stable-retro
+    try:
+        import retro
+
+        games = retro.data.list_games()
+        console.print(
+            f"[green]\u2713[/green] stable-retro installed ({len(games)} games available)"
+        )
+    except ImportError:
+        console.print("[red]\u2717[/red] stable-retro not installed")
+
+    # ale-py
+    try:
+        import ale_py  # noqa: F401
+
+        console.print("[green]\u2713[/green] ale-py installed")
+    except ImportError:
+        console.print("[red]\u2717[/red] ale-py not installed")
+
+    # sb3-contrib
+    try:
+        import sb3_contrib  # noqa: F401
+
+        console.print("[green]\u2713[/green] sb3-contrib installed (RecurrentPPO available)")
+    except ImportError:
+        console.print(
+            "[yellow]\u2717[/yellow] sb3-contrib not installed (RecurrentPPO unavailable)"
+        )
+
+    # Disk space
+    import shutil
+
+    usage = shutil.disk_usage(".")
+    free_gb = usage.free / (1024**3)
+    if free_gb > 5:
+        console.print(f"[green]\u2713[/green] Disk space: {free_gb:.1f} GB free")
+    else:
+        console.print(f"[yellow]\u2717[/yellow] Disk space: {free_gb:.1f} GB free")
+
+    # Results file
+    if Path("results.json").exists():
+        from golds.results.store import ResultStore
+
+        store = ResultStore()
+        console.print(f"[green]\u2713[/green] Results store: {len(store.get_results())} results")
+    else:
+        console.print("[yellow]\u2717[/yellow] No results.json found")
+
+    console.print()
 
 
 def main() -> None:

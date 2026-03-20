@@ -1,0 +1,21 @@
+# Enduro (Atari) Configuration
+
+name: enduro
+description: "Enduro Atari 2600 - racing game"
+
+environment:
+  platform: atari
+  game_id: enduro
+  n_envs: 16
+  terminal_on_life_loss: false
+  reward_regime: clipped
+
+ppo:
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.01
+
+training:
+  total_timesteps: 20000000
+  eval_freq: 50000
+  seed: 42

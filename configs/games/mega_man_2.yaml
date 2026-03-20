@@ -1,0 +1,24 @@
+# Mega Man 2 (NES) Configuration
+
+name: mega_man_2
+description: "Mega Man 2 (NES) - requires ROM import"
+
+environment:
+  platform: retro
+  game_id: mega_man_2
+  n_envs: 16
+  terminal_on_life_loss: false
+  reward_regime: clipped
+
+ppo:
+  learning_rate: 2.5e-4
+  n_steps: 128
+  ent_coef: 0.001
+  batch_size: 256
+
+training:
+  total_timesteps: 20000000
+  eval_freq: 100000
+  eval_episodes: 5
+  save_freq: 500000
+  seed: 42

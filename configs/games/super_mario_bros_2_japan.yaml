@@ -9,6 +9,7 @@ environment:
   n_envs: 24
   terminal_on_life_loss: false
   state: null  # Uses default Level1-1
+  reward_regime: clipped
 
 ppo:
   learning_rate: 2.5e-4
@@ -18,7 +19,7 @@ ppo:
 
 training:
   # Round 2 long-form target
-  total_timesteps: 40000000
+  total_timesteps: 50000000
   eval_freq: 200000
   eval_episodes: 3
   eval_deterministic: false

@@ -11,7 +11,6 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv
 
 from golds.environments.atari.env_id import resolve_atari_env_id
 
-
 _ALE_PY_V0_V4_REGISTERED = False
 _ALE_PY_V5_REGISTERED = False
 
@@ -31,9 +30,7 @@ def _register_ale_envs(env_id: str) -> None:
     try:
         import ale_py
     except ImportError as e:
-        raise RuntimeError(
-            "Atari support requires `ale-py` (install `gymnasium[atari]`)."
-        ) from e
+        raise RuntimeError("Atari support requires `ale-py` (install `gymnasium[atari]`).") from e
 
     # Some versions of `ale-py` register envs at import time.
     if env_id in gym.envs.registry:
@@ -75,8 +72,7 @@ def _ensure_atari_registered(env_id: str) -> None:
                 pass
             else:
                 raise RuntimeError(
-                    f"Unknown Atari environment id: '{env_id}'. "
-                    f"Try '{suggested}'."
+                    f"Unknown Atari environment id: '{env_id}'. Try '{suggested}'."
                 ) from e
 
         raise RuntimeError(f"Unknown Atari environment id: '{env_id}'.") from e
@@ -180,47 +176,3 @@ def make_atari_vec_env(
             )
 
     return vec_env
-
-
-class AtariEnvironmentMaker:
-    """Class-based Atari environment maker for compatibility."""
-
-    # Supported Atari games with their environment IDs
-    GAMES: dict[str, str] = {
-        "space_invaders": "SpaceInvadersNoFrameskip-v4",
-        "breakout": "BreakoutNoFrameskip-v4",
-        "pong": "PongNoFrameskip-v4",
-        "qbert": "QbertNoFrameskip-v4",
-        "seaquest": "SeaquestNoFrameskip-v4",
-        "asteroids": "AsteroidsNoFrameskip-v4",
-        "ms_pacman": "MsPacmanNoFrameskip-v4",
-        "enduro": "EnduroNoFrameskip-v4",
-        "beam_rider": "BeamRiderNoFrameskip-v4",
-        "freeway": "FreewayNoFrameskip-v4",
-    }
-
-    def make(
-        self,
-        game_id: str,
-        n_envs: int = 8,
-        seed: int | None = None,
-        **kwargs,
-    ) -> VecEnv:
-        """Create Atari environment.
-
-        Args:
-            game_id: Game identifier or full env ID
-            n_envs: Number of parallel environments
-            seed: Random seed
-            **kwargs: Additional arguments
-
-        Returns:
-            Preprocessed VecEnv
-        """
-        # Convert game_id to env_id if needed
-        env_id = self.GAMES.get(game_id, game_id)
-        return make_atari_vec_env(env_id=env_id, n_envs=n_envs, seed=seed, **kwargs)
-
-    def supported_games(self) -> list[str]:
-        """Return list of supported game IDs."""
-        return list(self.GAMES.keys())

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -15,9 +14,7 @@ console = Console()
 
 @rom_app.command("import")
 def rom_import(
-    path: Path = typer.Argument(
-        Path("roms"), help="Path to ROM directory or file"
-    ),
+    path: Path = typer.Argument(Path("roms"), help="Path to ROM directory or file"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ) -> None:
     """Import ROMs to stable-retro."""
@@ -49,12 +46,10 @@ def rom_import(
 
 @rom_app.command("list")
 def rom_list(
-    platform: Optional[str] = typer.Option(
+    platform: str | None = typer.Option(
         None, "--platform", "-p", help="Filter by platform (nes, snes, genesis)"
     ),
-    search: Optional[str] = typer.Option(
-        None, "--search", "-s", help="Search for game name"
-    ),
+    search: str | None = typer.Option(None, "--search", "-s", help="Search for game name"),
     limit: int = typer.Option(50, "--limit", "-n", help="Max results to show"),
 ) -> None:
     """List available games in stable-retro."""
@@ -116,9 +111,10 @@ def rom_verify(
         # Try to get states
         try:
             import retro
+
             states = retro.data.list_states(game)
             if states:
-                console.print(f"\nAvailable states:")
+                console.print("\nAvailable states:")
                 for state in states[:10]:
                     console.print(f"  - {state}")
                 if len(states) > 10:
@@ -143,7 +139,9 @@ def rom_info() -> None:
     console.print("[cyan]Atari ROMs:[/cyan]")
     console.print("  Atari environments use Gymnasium + ALE (`gymnasium[atari]` / `ale-py`).")
     console.print("  You also need an Atari ROM set (license restrictions apply).")
-    console.print("  If ROMs are missing, use AutoROM (accepting the ROM license) or set `ALE_ROM_DIR`.")
+    console.print(
+        "  If ROMs are missing, use AutoROM (accepting the ROM license) or set `ALE_ROM_DIR`."
+    )
     console.print()
 
     console.print("[cyan]Retro ROMs (NES/SNES/Genesis):[/cyan]")

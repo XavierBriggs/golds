@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import multiprocessing
 import sys
-from typing import Callable
+from collections.abc import Callable
 from pathlib import Path
 
 from stable_baselines3.common.vec_env import (
-    DummyVecEnv,
-    SubprocVecEnv,
     VecEnv,
     VecFrameStack,
     VecTransposeImage,
@@ -46,6 +44,7 @@ class EnvironmentFactory:
         seed: int | None = None,
         state: str | None = None,
         use_subproc: bool = True,
+        reward_regime: str = "clipped",
         **kwargs,
     ) -> VecEnv:
         """Create a fully preprocessed vectorized environment.
@@ -87,7 +86,9 @@ class EnvironmentFactory:
         opponent_mode = str(kwargs.get("opponent_mode", "none") or "none")
         opponent_model_path = kwargs.get("opponent_model_path")
         opponent_snapshot_dir = kwargs.get("opponent_snapshot_dir")
-        opponent_reload_interval_steps = int(kwargs.get("opponent_reload_interval_steps", 500) or 500)
+        opponent_reload_interval_steps = int(
+            kwargs.get("opponent_reload_interval_steps", 500) or 500
+        )
 
         # Create base vectorized environment
         vec_env = maker(
@@ -102,6 +103,12 @@ class EnvironmentFactory:
         # Apply common wrappers
         vec_env = VecFrameStack(vec_env, n_stack=frame_stack)
         vec_env = VecTransposeImage(vec_env)  # HWC -> CHW for PyTorch
+
+        # Optional reward normalization
+        if reward_regime == "normalized":
+            from stable_baselines3.common.vec_env import VecNormalize
+
+            vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
 
         # Retro self-play/opponent wrapper must happen after frame stacking/transpose
         # so opponent policies see the same observation format as the learner.
@@ -127,6 +134,7 @@ class EnvironmentFactory:
         frame_stack: int = 4,
         seed: int | None = None,
         state: str | None = None,
+        reward_regime: str = "clipped",
         **kwargs,
     ) -> VecEnv:
         """Create a single environment for evaluation.
@@ -149,6 +157,7 @@ class EnvironmentFactory:
             seed=seed,
             state=state,
             use_subproc=False,  # DummyVecEnv for evaluation
+            reward_regime=reward_regime,
             **kwargs,
         )
 

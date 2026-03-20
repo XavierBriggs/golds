@@ -120,8 +120,7 @@ class ConfigLoader:
         game_config_path = self.config_dir / "games" / f"{game_id}.yaml"
         if not game_config_path.exists():
             raise FileNotFoundError(
-                f"No config found for game: {game_id}. "
-                f"Expected at: {game_config_path}"
+                f"No config found for game: {game_id}. Expected at: {game_config_path}"
             )
         return self.load(game_config_path)
 

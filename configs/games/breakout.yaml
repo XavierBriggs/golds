@@ -8,6 +8,7 @@ environment:
   game_id: breakout
   n_envs: 16
   terminal_on_life_loss: true
+  reward_regime: clipped
 
 ppo:
   learning_rate: 2.5e-4

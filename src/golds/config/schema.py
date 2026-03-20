@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -18,12 +18,21 @@ class PPOConfig(BaseModel):
     gamma: float = Field(default=0.99, ge=0, le=1, description="Discount factor")
     gae_lambda: float = Field(default=0.95, ge=0, le=1, description="GAE lambda")
     clip_range: float = Field(default=0.1, ge=0, description="PPO clip parameter")
-    clip_range_vf: Optional[float] = Field(
+    clip_range_vf: float | None = Field(
         default=None, description="Value function clip range (None = no clipping)"
     )
     ent_coef: float = Field(default=0.01, ge=0, description="Entropy coefficient")
     vf_coef: float = Field(default=0.5, ge=0, description="Value function coefficient")
     max_grad_norm: float = Field(default=0.5, ge=0, description="Max gradient norm")
+    policy: Literal["CnnPolicy", "CnnLstmPolicy"] = Field(
+        default="CnnPolicy", description="Policy architecture"
+    )
+    lr_schedule: Literal["constant", "linear", "cosine"] = Field(
+        default="constant", description="Learning rate schedule"
+    )
+    clip_schedule: Literal["constant", "linear"] = Field(
+        default="constant", description="Clip range schedule"
+    )
 
 
 class EnvironmentConfig(BaseModel):
@@ -45,9 +54,7 @@ class EnvironmentConfig(BaseModel):
     use_subproc: bool = Field(
         default=True, description="Use SubprocVecEnv for parallel environments"
     )
-    state: Optional[str] = Field(
-        default=None, description="Initial state for retro games"
-    )
+    state: str | None = Field(default=None, description="Initial state for retro games")
     players: int = Field(
         default=1,
         ge=1,
@@ -58,18 +65,20 @@ class EnvironmentConfig(BaseModel):
         default="none",
         description="Opponent policy mode when players=2 (retro only).",
     )
-    opponent_model_path: Optional[str] = Field(
+    opponent_model_path: str | None = Field(
         default=None,
         description="Path to opponent model .zip (used when opponent='model').",
+    )
+    reward_regime: Literal["clipped", "raw", "normalized"] = Field(
+        default="clipped",
+        description="Reward handling: clipped={-1,0,+1}, raw=game score, normalized=VecNormalize",
     )
 
 
 class TrainingConfig(BaseModel):
     """Training configuration."""
 
-    total_timesteps: int = Field(
-        default=10_000_000, ge=1, description="Total training timesteps"
-    )
+    total_timesteps: int = Field(default=10_000_000, ge=1, description="Total training timesteps")
     eval_freq: int = Field(
         default=50_000,
         ge=0,
@@ -86,9 +95,9 @@ class TrainingConfig(BaseModel):
         description="Checkpoint frequency (timesteps); 0 disables checkpointing",
     )
     log_interval: int = Field(default=1, ge=1, description="Logging interval (updates)")
-    seed: Optional[int] = Field(default=None, description="Random seed")
-    device: Literal["auto", "cuda", "cpu"] = Field(
-        default="auto", description="Device to use"
+    seed: int | None = Field(default=None, description="Random seed")
+    device: Literal["auto", "cuda", "mps", "cpu"] = Field(
+        default="auto", description="Device to use (auto detects best: cuda > mps > cpu)"
     )
     self_play_snapshot_freq: int = Field(
         default=0,
@@ -99,6 +108,10 @@ class TrainingConfig(BaseModel):
         default=5,
         ge=1,
         description="Max number of opponent snapshots to keep (self-play only).",
+    )
+    self_play_sampling: Literal["uniform", "proportional", "pfsp"] = Field(
+        default="uniform",
+        description="Opponent sampling strategy for self-play (uniform, proportional, or pfsp).",
     )
 
 
@@ -112,6 +125,9 @@ class ExperimentConfig(BaseModel):
     training: TrainingConfig = Field(
         default_factory=TrainingConfig, description="Training configuration"
     )
+    round: int = Field(default=1, ge=1, description="Training round number")
+    version: str = Field(default="", description="Free-form version tag")
+    parent_run: str | None = Field(default=None, description="Run this was resumed from")
 
     @field_validator("name")
     @classmethod
@@ -121,16 +137,42 @@ class ExperimentConfig(BaseModel):
             raise ValueError("Name must be alphanumeric with underscores/dashes only")
         return v
 
+    def config_hash(self) -> str:
+        """SHA256 hash of the serialized config for deduplication."""
+        import hashlib
+        import json
+
+        # Hash only the training-relevant fields, not metadata
+        data = {
+            "environment": self.environment.model_dump(),
+            "ppo": self.ppo.model_dump(),
+            "training": self.training.model_dump(),
+        }
+        blob = json.dumps(data, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()[:12]
+
     def to_ppo_kwargs(self) -> dict:
         """Convert PPO config to kwargs for SB3 PPO."""
+        from golds.training.schedules import cosine_schedule, linear_schedule
+
+        lr = self.ppo.learning_rate
+        if self.ppo.lr_schedule == "linear":
+            lr = linear_schedule(self.ppo.learning_rate)
+        elif self.ppo.lr_schedule == "cosine":
+            lr = cosine_schedule(self.ppo.learning_rate)
+
+        clip = self.ppo.clip_range
+        if self.ppo.clip_schedule == "linear":
+            clip = linear_schedule(self.ppo.clip_range)
+
         return {
-            "learning_rate": self.ppo.learning_rate,
+            "learning_rate": lr,
             "n_steps": self.ppo.n_steps,
             "batch_size": self.ppo.batch_size,
             "n_epochs": self.ppo.n_epochs,
             "gamma": self.ppo.gamma,
             "gae_lambda": self.ppo.gae_lambda,
-            "clip_range": self.ppo.clip_range,
+            "clip_range": clip,
             "clip_range_vf": self.ppo.clip_range_vf,
             "ent_coef": self.ppo.ent_coef,
             "vf_coef": self.ppo.vf_coef,

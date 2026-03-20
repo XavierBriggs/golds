@@ -47,9 +47,7 @@ class GameRegistry:
         """
         if game_id not in cls._games:
             available = list(cls._games.keys())
-            raise ValueError(
-                f"Unknown game: '{game_id}'. Available games: {available}"
-            )
+            raise ValueError(f"Unknown game: '{game_id}'. Available games: {available}")
         return cls._games[game_id]
 
     @classmethod
@@ -143,6 +141,33 @@ GameRegistry.register(
     )
 )
 
+GameRegistry.register(
+    GameRegistration(
+        game_id="montezuma_revenge",
+        platform="atari",
+        display_name="Montezuma's Revenge",
+        env_id="MontezumaRevengeNoFrameskip-v4",
+    )
+)
+
+GameRegistry.register(
+    GameRegistration(
+        game_id="enduro",
+        platform="atari",
+        display_name="Enduro",
+        env_id="EnduroNoFrameskip-v4",
+    )
+)
+
+GameRegistry.register(
+    GameRegistration(
+        game_id="frostbite",
+        platform="atari",
+        display_name="Frostbite",
+        env_id="FrostbiteNoFrameskip-v4",
+    )
+)
+
 # Register Retro games (NES)
 GameRegistry.register(
     GameRegistration(
@@ -190,5 +215,25 @@ GameRegistry.register(
         display_name="Sonic the Hedgehog (Genesis)",
         env_id="SonicTheHedgehog-Genesis",
         default_state="GreenHillZone.Act1",
+    )
+)
+
+GameRegistry.register(
+    GameRegistration(
+        game_id="street_fighter_ii",
+        platform="retro",
+        display_name="Street Fighter II (Genesis)",
+        env_id="StreetFighterIISpecialChampionEdition-Genesis",
+        default_state=None,
+    )
+)
+
+GameRegistry.register(
+    GameRegistration(
+        game_id="mega_man_2",
+        platform="retro",
+        display_name="Mega Man 2 (NES)",
+        env_id="MegaMan2-Nes",
+        default_state=None,
     )
 )

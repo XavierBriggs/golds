@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
 import os
 import time
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import VecMonitor, is_vecenv_wrapped
-from stable_baselines3.common.vec_env import VecEnv
+from stable_baselines3.common.vec_env import VecEnv, VecMonitor, is_vecenv_wrapped
 
 
 class SaveOnBestTrainingRewardCallback(BaseCallback):
@@ -51,15 +50,10 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
         if self.n_calls % self.check_freq == 0:
             # Retrieve training reward from info
             if len(self.model.ep_info_buffer) > 0:
-                mean_reward = np.mean(
-                    [ep_info["r"] for ep_info in self.model.ep_info_buffer]
-                )
+                mean_reward = np.mean([ep_info["r"] for ep_info in self.model.ep_info_buffer])
                 if self.verbose > 0:
                     print(f"Num timesteps: {self.num_timesteps}")
-                    print(
-                        f"Mean reward: {mean_reward:.2f} - "
-                        f"Best: {self.best_mean_reward:.2f}"
-                    )
+                    print(f"Mean reward: {mean_reward:.2f} - Best: {self.best_mean_reward:.2f}")
 
                 if mean_reward > self.best_mean_reward:
                     self.best_mean_reward = mean_reward
@@ -73,39 +67,6 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
                                 f"[warn] best_training save failed ({e}); continuing without saving."
                             )
 
-        return True
-
-
-class TensorBoardVideoCallback(BaseCallback):
-    """Callback for recording videos to TensorBoard."""
-
-    def __init__(
-        self,
-        eval_env: VecEnv,
-        record_freq: int = 100_000,
-        n_episodes: int = 1,
-        verbose: int = 0,
-    ) -> None:
-        """Initialize callback.
-
-        Args:
-            eval_env: Environment for recording
-            record_freq: Record every N timesteps
-            n_episodes: Number of episodes to record
-            verbose: Verbosity level
-        """
-        super().__init__(verbose)
-        self.eval_env = eval_env
-        self.record_freq = record_freq
-        self.n_episodes = n_episodes
-
-    def _on_step(self) -> bool:
-        """Record video if needed."""
-        if self.n_calls % self.record_freq == 0:
-            # Recording would require additional setup with VecVideoRecorder
-            # This is a placeholder for the recording logic
-            if self.verbose > 0:
-                print(f"Step {self.num_timesteps}: Video recording triggered")
         return True
 
 
@@ -135,8 +96,7 @@ class ProgressCallback(BaseCallback):
             progress = self.num_timesteps / self.total_timesteps * 100
             if self.verbose > 0:
                 print(
-                    f"Progress: {self.num_timesteps:,}/{self.total_timesteps:,} "
-                    f"({progress:.1f}%)"
+                    f"Progress: {self.num_timesteps:,}/{self.total_timesteps:,} ({progress:.1f}%)"
                 )
         return True
 
@@ -157,6 +117,7 @@ def create_eval_callback(
         eval_freq: Evaluation frequency in timesteps
         n_eval_episodes: Episodes per evaluation
         n_envs: Number of training environments (for freq adjustment)
+        deterministic: Use deterministic policy during evaluation
 
     Returns:
         Configured EvalCallback
@@ -226,13 +187,15 @@ class VerboseEvalCallback(EvalCallback):
     periodic heartbeat during evaluation.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._eval_start_time: float | None = None
         self._eval_last_heartbeat: float = 0.0
         self._eval_episodes_done: int = 0
         try:
-            self._eval_heartbeat_seconds = float(os.environ.get("GOLDS_EVAL_HEARTBEAT_SECONDS", "60"))
+            self._eval_heartbeat_seconds = float(
+                os.environ.get("GOLDS_EVAL_HEARTBEAT_SECONDS", "60")
+            )
         except Exception:
             self._eval_heartbeat_seconds = 60.0
 
@@ -259,10 +222,10 @@ class VerboseEvalCallback(EvalCallback):
             if getattr(self, "verbose", 0) >= 1:
                 ep = info["episode"]
                 r = ep.get("r")
-                l = ep.get("l")
+                ep_len = ep.get("l")
                 print(
                     f"[eval] episode {self._eval_episodes_done}/{self.n_eval_episodes} done: "
-                    f"reward={r} len={l}",
+                    f"reward={r} len={ep_len}",
                     flush=True,
                 )
 
@@ -312,6 +275,15 @@ class SelfPlaySnapshotCallback(BaseCallback):
         prefix: str = "opponent",
         verbose: int = 0,
     ) -> None:
+        """Initialize snapshot callback.
+
+        Args:
+            snapshot_dir: Directory to save opponent snapshots.
+            save_freq: Save a snapshot every N timesteps.
+            max_snapshots: Maximum number of snapshots to keep.
+            prefix: Filename prefix for snapshot files.
+            verbose: Verbosity level.
+        """
         super().__init__(verbose)
         self.snapshot_dir = Path(snapshot_dir)
         self.save_freq = int(save_freq)
@@ -347,11 +319,13 @@ class SelfPlaySnapshotCallback(BaseCallback):
         # Prune old snapshots by step number (best-effort).
         snapshots = sorted(self.snapshot_dir.glob(f"{self.prefix}_*.zip"))
         if len(snapshots) > self.max_snapshots:
+
             def step_key(p: Path) -> int:
                 try:
                     return int(p.stem.rsplit("_", 1)[-1])
                 except Exception:
                     return 0
+
             snapshots = sorted(snapshots, key=step_key, reverse=True)
             for p in snapshots[self.max_snapshots :]:
                 try:
@@ -360,3 +334,113 @@ class SelfPlaySnapshotCallback(BaseCallback):
                     pass
 
         return True
+
+
+class ResultsCallback(BaseCallback):
+    """Record training results to the ResultStore on completion.
+
+    Tracks wall-clock time and assembles a TrainingResult when training ends.
+    """
+
+    def __init__(
+        self,
+        game_id: str,
+        experiment_name: str,
+        config_hash: str,
+        round: int,
+        total_timesteps_target: int,
+        device: str,
+        n_envs: int,
+        reward_regime: str = "clipped",
+        output_dir: str | Path = "",
+        results_path: str | Path = "results.json",
+        resumed_from: str | None = None,
+        verbose: int = 0,
+    ) -> None:
+        """Initialize results callback.
+
+        Args:
+            game_id: Atari game identifier.
+            experiment_name: Human-readable experiment name.
+            config_hash: Hash of the training config for dedup.
+            round: Training round number.
+            total_timesteps_target: Target timesteps for the run.
+            device: Training device string.
+            n_envs: Number of parallel environments.
+            reward_regime: Reward regime ('clipped' or 'raw').
+            output_dir: Base output directory for model paths.
+            results_path: Path to the results JSON file.
+            resumed_from: Path to model this run was resumed from.
+            verbose: Verbosity level.
+        """
+        super().__init__(verbose)
+        self.game_id = game_id
+        self.experiment_name = experiment_name
+        self.config_hash = config_hash
+        self.round = round
+        self.total_timesteps_target = total_timesteps_target
+        self.device = device
+        self.n_envs = n_envs
+        self.reward_regime = reward_regime
+        self.output_dir = str(output_dir)
+        self.results_path = Path(results_path)
+        self.resumed_from = resumed_from
+        self._start_time: float | None = None
+
+    def _on_training_start(self) -> None:
+        self._start_time = time.monotonic()
+
+    def _on_step(self) -> bool:
+        return True
+
+    def _on_training_end(self) -> None:
+        """Assemble and save TrainingResult."""
+        if self._start_time is None:
+            return
+
+        from datetime import datetime
+
+        from golds.results.schema import TrainingResult
+        from golds.results.store import ResultStore
+
+        wall_time = time.monotonic() - self._start_time
+
+        # Try to get best eval reward from parent callback's best_mean_reward
+        best_eval_reward = None
+        if hasattr(self, "parent") and self.parent is not None:
+            for cb in getattr(self.parent, "callbacks", []):
+                if hasattr(cb, "best_mean_reward") and hasattr(cb, "best_model_save_path"):
+                    best_eval_reward = (
+                        float(cb.best_mean_reward) if cb.best_mean_reward != -np.inf else None
+                    )
+                    break
+
+        result = TrainingResult(
+            game_id=self.game_id,
+            experiment_name=self.experiment_name,
+            config_hash=self.config_hash,
+            round=self.round,
+            total_timesteps_completed=int(self.num_timesteps),
+            total_timesteps_target=self.total_timesteps_target,
+            wall_time_seconds=wall_time,
+            best_eval_reward=best_eval_reward,
+            device=self.device,
+            n_envs=self.n_envs,
+            started_at=datetime.now(),
+            completed_at=datetime.now(),
+            exit_code=0,
+            resumed_from=self.resumed_from,
+            reward_regime=self.reward_regime,
+            best_model_path=str(Path(self.output_dir) / "best" / "best_model.zip"),
+            final_model_path=str(Path(self.output_dir) / "models" / "final_model.zip"),
+            tensorboard_log_dir=str(Path(self.output_dir) / "logs"),
+        )
+
+        try:
+            store = ResultStore(self.results_path)
+            store.add_result(result)
+            if self.verbose > 0:
+                print(f"[results] Training result saved to {self.results_path}")
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"[warn] Failed to save training result: {e}")

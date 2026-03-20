@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -105,3 +104,27 @@ def eval_compare(
 
     console.print()
     console.print(table)
+
+
+@eval_app.command("benchmark")
+def eval_benchmark(
+    model_path: str = typer.Argument(..., help="Path to model .zip file"),
+    game: str = typer.Option(..., "--game", "-g", help="Game ID"),
+    episodes: int = typer.Option(100, "--episodes", "-n", help="Episodes per seed"),
+    seeds: str = typer.Option("42,123,456", "--seeds", help="Comma-separated seeds"),
+) -> None:
+    """Run standardized benchmark evaluation (multi-seed)."""
+    from golds.evaluation.evaluator import Evaluator
+
+    seed_list = [int(s.strip()) for s in seeds.split(",")]
+
+    if not model_path.endswith(".zip"):
+        model_path += ".zip"
+
+    console.print(
+        f"[cyan]Running benchmark: {episodes} episodes \u00d7 {len(seed_list)} seeds[/cyan]"
+    )
+
+    evaluator = Evaluator(model_path=model_path, game_id=game)
+    results = evaluator.benchmark(n_episodes=episodes, seeds=seed_list)
+    evaluator.print_results(results)

@@ -1,9 +1,9 @@
 """Tests for configuration system."""
 
 import pytest
-from pathlib import Path
-from golds.config.schema import ExperimentConfig, PPOConfig, EnvironmentConfig
+
 from golds.config.loader import ConfigLoader, deep_merge
+from golds.config.schema import EnvironmentConfig, ExperimentConfig, PPOConfig
 
 
 class TestPPOConfig:

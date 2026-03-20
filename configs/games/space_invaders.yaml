@@ -8,6 +8,7 @@ environment:
   game_id: space_invaders
   n_envs: 16
   terminal_on_life_loss: true
+  reward_regime: clipped
 
 ppo:
   # Standard DeepMind settings work well for Space Invaders

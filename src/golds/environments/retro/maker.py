@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import cv2
 import gymnasium as gym
 import numpy as np
-from pathlib import Path
 
 try:
     import retro
+
     RETRO_AVAILABLE = True
 except ImportError:
     RETRO_AVAILABLE = False
 
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv
 
 
 class RetroPreprocessing(gym.Wrapper):
@@ -71,9 +72,7 @@ class RetroPreprocessing(gym.Wrapper):
             obs = cv2.cvtColor(obs, cv2.COLOR_RGB2GRAY)
 
         # Resize
-        obs = cv2.resize(
-            obs, (self.screen_size, self.screen_size), interpolation=cv2.INTER_AREA
-        )
+        obs = cv2.resize(obs, (self.screen_size, self.screen_size), interpolation=cv2.INTER_AREA)
 
         # Add channel dimension for grayscale
         if self.grayscale:
@@ -161,9 +160,7 @@ def make_retro_env(
         Preprocessed gym.Env
     """
     if not RETRO_AVAILABLE:
-        raise ImportError(
-            "stable-retro is not installed. Install with: pip install stable-retro"
-        )
+        raise ImportError("stable-retro is not installed. Install with: pip install stable-retro")
 
     # Create base environment
     env = retro.make(
@@ -222,9 +219,7 @@ def make_retro_vec_env(
         Vectorized retro environment
     """
     if not RETRO_AVAILABLE:
-        raise ImportError(
-            "stable-retro is not installed. Install with: pip install stable-retro"
-        )
+        raise ImportError("stable-retro is not installed. Install with: pip install stable-retro")
 
     # Default wrapper kwargs
     default_kwargs = {
@@ -279,65 +274,3 @@ def make_retro_vec_env(
         vec_env = DummyVecEnv(env_fns)
 
     return vec_env
-
-
-class RetroEnvironmentMaker:
-    """Class-based retro environment maker for compatibility."""
-
-    # Supported retro games
-    GAMES: dict[str, dict[str, str]] = {
-        "super_mario_bros": {
-            "env_id": "SuperMarioBros-Nes",
-            "state": "Level1-1",
-        },
-        "super_mario_bros_2_japan": {
-            "env_id": "SuperMarioBros2Japan-Nes",
-            "state": "Level1-1",
-        },
-    }
-
-    def make(
-        self,
-        game_id: str,
-        n_envs: int = 8,
-        seed: int | None = None,
-        state: str | None = None,
-        **kwargs,
-    ) -> VecEnv:
-        """Create retro environment.
-
-        Args:
-            game_id: Game identifier
-            n_envs: Number of parallel environments
-            seed: Random seed
-            state: Override default state
-            **kwargs: Additional arguments
-
-        Returns:
-            Preprocessed VecEnv
-        """
-        game_info = self.GAMES.get(game_id, {"env_id": game_id, "state": None})
-        env_id = game_info["env_id"]
-        default_state = state or game_info.get("state")
-
-        return make_retro_vec_env(
-            env_id=env_id, n_envs=n_envs, seed=seed, state=default_state, **kwargs
-        )
-
-    def supported_games(self) -> list[str]:
-        """Return list of supported game IDs."""
-        return list(self.GAMES.keys())
-
-    @staticmethod
-    def list_available_games() -> list[str]:
-        """List all games available in stable-retro."""
-        if not RETRO_AVAILABLE:
-            return []
-        return sorted(retro.data.list_games())
-
-    @staticmethod
-    def is_game_available(game: str) -> bool:
-        """Check if a game is available in stable-retro."""
-        if not RETRO_AVAILABLE:
-            return False
-        return game in retro.data.list_games()

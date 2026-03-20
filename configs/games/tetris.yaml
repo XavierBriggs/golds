@@ -9,6 +9,7 @@ environment:
   n_envs: 24
   terminal_on_life_loss: false
   state: null  # Uses registry default (Level0.TypeA)
+  reward_regime: clipped
 
 ppo:
   learning_rate: 2.5e-4

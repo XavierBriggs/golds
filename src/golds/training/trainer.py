@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
-from typing import Any
 
 from rich.console import Console
 from stable_baselines3 import PPO
@@ -16,9 +15,10 @@ from golds.config.schema import ExperimentConfig
 from golds.environments.factory import EnvironmentFactory
 from golds.training.callbacks import (
     ProgressCallback,
+    ResultsCallback,
+    SafeCheckpointCallback,
     SaveOnBestTrainingRewardCallback,
     SelfPlaySnapshotCallback,
-    SafeCheckpointCallback,
     create_eval_callback,
 )
 from golds.utils.device import get_device
@@ -81,6 +81,7 @@ class Trainer:
             seed=self.config.training.seed,
             state=env_config.state,
             use_subproc=env_config.use_subproc,
+            reward_regime=env_config.reward_regime,
             players=env_config.players,
             opponent_mode=env_config.opponent,
             opponent_model_path=env_config.opponent_model_path,
@@ -115,6 +116,7 @@ class Trainer:
             frame_stack=env_config.frame_stack,
             seed=self.config.training.seed,
             state=env_config.state,
+            reward_regime=env_config.reward_regime,
             players=env_config.players,
             opponent_mode=opponent_mode,
             opponent_model_path=opponent_model_path,
@@ -133,13 +135,40 @@ class Trainer:
         device = get_device(self.config.training.device)
         console.print(f"[cyan]Using device: {device}[/cyan]")
 
+        policy = self.config.ppo.policy
+
+        # Select PPO implementation
+        if policy == "CnnLstmPolicy":
+            try:
+                from sb3_contrib import RecurrentPPO
+            except ImportError:
+                raise ImportError(
+                    "RecurrentPPO requires sb3-contrib. Install with: pip install sb3-contrib"
+                )
+            ppo_cls = RecurrentPPO
+            console.print("[cyan]Using RecurrentPPO (LSTM policy)[/cyan]")
+        else:
+            ppo_cls = PPO
+
         if self.resume_from and self.resume_from.exists():
             console.print(f"[yellow]Resuming from: {self.resume_from}[/yellow]")
-            model = PPO.load(self.resume_from, env=train_env, device=device)
+            model = ppo_cls.load(self.resume_from, env=train_env, device=device)
+
+            # Load VecNormalize stats if they exist
+            vec_norm_path = self.model_dir / "vec_normalize.pkl"
+            if vec_norm_path.exists():
+                from stable_baselines3.common.vec_env import VecNormalize as VecNorm
+
+                env = train_env
+                while env is not None:
+                    if isinstance(env, VecNorm):
+                        VecNorm.load(str(vec_norm_path), env)
+                        break
+                    env = getattr(env, "venv", None)
         else:
             ppo_kwargs = self.config.to_ppo_kwargs()
-            model = PPO(
-                policy="CnnPolicy",
+            model = ppo_cls(
+                policy=policy,
                 env=train_env,
                 tensorboard_log=str(self.log_dir),
                 device=device,
@@ -175,9 +204,7 @@ class Trainer:
         # Checkpoint callback (optional)
         if self.config.training.save_freq > 0:
             checkpoint_callback = SafeCheckpointCallback(
-                save_freq=max(
-                    1, self.config.training.save_freq // self.config.environment.n_envs
-                ),
+                save_freq=max(1, self.config.training.save_freq // self.config.environment.n_envs),
                 save_path=str(self.checkpoint_dir),
                 name_prefix=self.config.name,
             )
@@ -213,6 +240,22 @@ class Trainer:
                     verbose=0,
                 )
             )
+
+        # Results tracking callback
+        results_callback = ResultsCallback(
+            game_id=self.config.environment.game_id,
+            experiment_name=self.config.name,
+            config_hash=self.config.config_hash(),
+            round=self.config.round,
+            total_timesteps_target=self.config.training.total_timesteps,
+            device=get_device(self.config.training.device),
+            n_envs=self.config.environment.n_envs,
+            reward_regime=self.config.environment.reward_regime,
+            output_dir=str(self.output_dir),
+            resumed_from=str(self.resume_from) if self.resume_from else None,
+            verbose=1,
+        )
+        callbacks.append(results_callback)
 
         return CallbackList(callbacks)
 
@@ -302,6 +345,17 @@ class Trainer:
         console.print(f"Parallel envs: {self.config.environment.n_envs}")
         console.print()
 
+        # Telegram notifications (best-effort, never blocks training)
+        from golds.notifications.telegram import TelegramNotifier
+
+        notifier = TelegramNotifier()
+        notifier.send_training_start(
+            experiment_name=self.config.name,
+            game_id=self.config.environment.game_id,
+            total_timesteps=self.config.training.total_timesteps,
+            device=get_device(self.config.training.device),
+        )
+
         # Fail fast if the output filesystem is close to full.
         self._check_output_disk_space()
 
@@ -342,6 +396,14 @@ class Trainer:
                     console.print(
                         "[yellow]Target timesteps already reached; skipping training loop.[/yellow]"
                     )
+                    if self.resume_from is not None:
+                        console.print(f"[yellow]Already completed: {already:,} timesteps[/yellow]")
+                    # Copy best eval model to final if it exists
+                    best_model = self.output_dir / "best" / "best_model.zip"
+                    if best_model.exists():
+                        final_path = self.model_dir / "final_model.zip"
+                        shutil.copy2(best_model, final_path)
+                        console.print(f"[green]Copied best eval model to: {final_path}[/green]")
                 else:
                     model.learn(
                         total_timesteps=total_timesteps,
@@ -353,6 +415,16 @@ class Trainer:
             except OSError as e:
                 self._reraise_storage_error(e, "Training (checkpoint/log save)")
 
+            # Save VecNormalize stats if applicable
+            from stable_baselines3.common.vec_env import VecNormalize as VecNorm
+
+            env = train_env
+            while env is not None:
+                if isinstance(env, VecNorm):
+                    env.save(str(self.model_dir / "vec_normalize.pkl"))
+                    break
+                env = getattr(env, "venv", None)
+
             # Save final model
             final_model_path = self.model_dir / "final_model"
             try:
@@ -361,7 +433,22 @@ class Trainer:
                 self._reraise_storage_error(e, "Final model save")
             console.print(f"[green]Final model saved to: {final_model_path}[/green]")
 
+            notifier.send_training_complete(
+                experiment_name=self.config.name,
+                game_id=self.config.environment.game_id,
+                wall_time_seconds=0.0,  # ResultsCallback tracks precise time
+                total_timesteps=int(getattr(model, "num_timesteps", 0) or 0),
+            )
+
             return model
+
+        except Exception as e:
+            notifier.send_training_failed(
+                experiment_name=self.config.name,
+                game_id=self.config.environment.game_id,
+                error=str(e),
+            )
+            raise
 
         finally:
             train_env.close()

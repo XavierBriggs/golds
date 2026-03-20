@@ -4,7 +4,9 @@ from golds.environments.atari.env_id import resolve_atari_env_id
 
 
 def test_resolve_atari_env_id_passthrough_for_ale_ids() -> None:
-    assert resolve_atari_env_id("ALE/SpaceInvadersNoFrameskip-v5") == "ALE/SpaceInvadersNoFrameskip-v5"
+    assert (
+        resolve_atari_env_id("ALE/SpaceInvadersNoFrameskip-v5") == "ALE/SpaceInvadersNoFrameskip-v5"
+    )
 
 
 def test_resolve_atari_env_id_keeps_legacy_v4_ids() -> None:
