@@ -32,8 +32,14 @@ print(f"Model: {model_path}")
 game_info = GameRegistry.get(game)
 
 if game_info.platform == "atari":
+    # Register ALE envs
+    import ale_py
+    ale_py.register_v0_v4_envs()
+    from golds.environments.atari.env_id import resolve_atari_env_id
+    env_id = resolve_atari_env_id(game_info.env_id)
+
     # Create env with render_mode for recording
-    base_env = gym.make(game_info.env_id, render_mode="rgb_array")
+    base_env = gym.make(env_id, render_mode="rgb_array")
 
     # Wrap for the model (AtariWrapper does preprocessing)
     wrapped = AtariWrapper(base_env)
