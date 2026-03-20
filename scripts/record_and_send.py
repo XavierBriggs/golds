@@ -1,4 +1,4 @@
-"""Record best model playing and send video to Telegram."""
+"""Record best model playing at full resolution and send video to Telegram."""
 import glob
 import os
 import sys
@@ -7,11 +7,12 @@ import cv2
 import gymnasium as gym
 import numpy as np
 from stable_baselines3 import PPO
-from golds.environments.factory import EnvironmentFactory
+from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack, VecTransposeImage
 from golds.environments.registry import GameRegistry
 
 game = sys.argv[1] if len(sys.argv) > 1 else "ms_pacman"
-steps = int(sys.argv[2]) if len(sys.argv) > 2 else 5000
+steps = int(sys.argv[2]) if len(sys.argv) > 2 else 3000
 
 # Find latest best model
 candidates = sorted(glob.glob(f"outputs/{game}*/best/best_model.zip"))
@@ -28,73 +29,98 @@ if not candidates:
 model_path = candidates[-1]
 print(f"Model: {model_path}")
 
-# Create the wrapped env for the model to use (84x84 grayscale)
-env = EnvironmentFactory.create_eval_env(game_id=game, frame_stack=4, seed=0)
-model = PPO.load(model_path, env=env)
-
-# Create a raw render env for recording (full color, full resolution)
 game_info = GameRegistry.get(game)
+
 if game_info.platform == "atari":
-    raw_env = gym.make(game_info.env_id, render_mode="rgb_array")
+    # Create env with render_mode for recording
+    base_env = gym.make(game_info.env_id, render_mode="rgb_array")
+
+    # Wrap for the model (AtariWrapper does preprocessing)
+    wrapped = AtariWrapper(base_env)
+    vec_env = DummyVecEnv([lambda: wrapped])
+    vec_env = VecFrameStack(vec_env, n_stack=4)
+    vec_env = VecTransposeImage(vec_env)
+
+    model = PPO.load(model_path, env=vec_env)
+    obs = vec_env.reset()
+
+    os.makedirs("videos", exist_ok=True)
+    mp4_path = f"videos/{game}.mp4"
+    writer = None
+
+    print(f"Recording {steps} frames...")
+    for i in range(steps):
+        # Get the ORIGINAL frame from the base env (before wrappers)
+        frame = base_env.render()
+        if frame is not None:
+            frame = np.asarray(frame)
+            if writer is None:
+                h, w = frame.shape[0], frame.shape[1]
+                writer = cv2.VideoWriter(mp4_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
+                print(f"Video: {w}x{h}")
+            writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+        action, _ = model.predict(obs, deterministic=True)
+        obs, _, dones, _ = vec_env.step(action)
+        if dones[0]:
+            obs = vec_env.reset()
+
+    vec_env.close()
+    if writer:
+        writer.release()
+
 else:
     # Retro games
     try:
         import retro
-        raw_env = retro.make(game=game_info.env_id, render_mode="rgb_array")
-    except Exception:
-        raw_env = None
+    except ImportError:
+        print("stable-retro not installed")
+        sys.exit(1)
 
-obs = env.reset()
-if raw_env is not None:
-    raw_env.reset()
+    base_env = retro.make(
+        game=game_info.env_id,
+        state=game_info.default_state or retro.State.DEFAULT,
+        render_mode="rgb_array",
+    )
 
-os.makedirs("videos", exist_ok=True)
-mp4_path = f"videos/{game}.mp4"
-writer = None
+    # Import retro preprocessing
+    from golds.environments.retro.maker import RetroPreprocessing, FrameSkip
+    from stable_baselines3.common.monitor import Monitor
 
-for i in range(steps):
-    # Get raw frame for video
-    if raw_env is not None:
-        frame = raw_env.render()
-        if frame is None:
-            frame = np.asarray(env.get_images()[0])
-    else:
-        frame = np.asarray(env.get_images()[0])
+    proc_env = Monitor(base_env)
+    proc_env = FrameSkip(proc_env, skip=4)
+    proc_env = RetroPreprocessing(proc_env)
+    vec_env = DummyVecEnv([lambda: proc_env])
+    vec_env = VecFrameStack(vec_env, n_stack=4)
+    vec_env = VecTransposeImage(vec_env)
 
-    frame = np.asarray(frame)
-    if frame.ndim == 2:
-        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-    elif frame.shape[2] == 3:
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    model = PPO.load(model_path, env=vec_env)
+    obs = vec_env.reset()
 
-    if writer is None:
-        h, w = frame.shape[0], frame.shape[1]
-        writer = cv2.VideoWriter(mp4_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
-        print(f"Recording {w}x{h} video...")
+    os.makedirs("videos", exist_ok=True)
+    mp4_path = f"videos/{game}.mp4"
+    writer = None
 
-    writer.write(frame)
+    print(f"Recording {steps} frames...")
+    for i in range(steps):
+        frame = base_env.render()
+        if frame is not None:
+            frame = np.asarray(frame)
+            if writer is None:
+                h, w = frame.shape[0], frame.shape[1]
+                writer = cv2.VideoWriter(mp4_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
+                print(f"Video: {w}x{h}")
+            writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
-    # Step both envs with same action
-    action, _ = model.predict(obs, deterministic=True)
-    obs, _, dones, _ = env.step(action)
+        action, _ = model.predict(obs, deterministic=True)
+        obs, _, dones, _ = vec_env.step(action)
+        if dones[0]:
+            obs = vec_env.reset()
 
-    if raw_env is not None:
-        try:
-            # Convert vectorized action to scalar for raw env
-            a = action[0] if hasattr(action, '__len__') else action
-            raw_env.step(a)
-        except Exception:
-            pass
+    vec_env.close()
+    if writer:
+        writer.release()
 
-    if dones[0]:
-        obs = env.reset()
-        if raw_env is not None:
-            raw_env.reset()
-
-env.close()
-if raw_env is not None:
-    raw_env.close()
-writer.release()
 print(f"Saved: {mp4_path}")
 
 # Send to Telegram
@@ -123,7 +149,7 @@ try:
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
     )
     resp = urllib.request.urlopen(req, timeout=60)
-    print(f"Sent to Telegram!")
+    print("Sent to Telegram!")
 except Exception as e:
     print(f"Telegram send failed: {e}")
     print(f"Video is at: {mp4_path}")
