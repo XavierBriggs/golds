@@ -7,42 +7,46 @@ set -euo pipefail
 
 GAME="${1:?Usage: bash scripts/watch.sh <game_id>}"
 
-# Find the latest output directory for this game
-OUTPUT_DIR=$(ls -dt outputs/${GAME}_* outputs/${GAME} 2>/dev/null | head -1)
+# Find the best model across all output directories for this game
+MODEL=$(find outputs -path "*${GAME}*/best/best_model.zip" -o \
+                     -path "*${GAME}*/best_training/best_training_model.zip" -o \
+                     -path "*${GAME}*/models/final_model.zip" 2>/dev/null | \
+        head -1)
 
-if [[ -z "${OUTPUT_DIR}" ]]; then
-    echo "No output directory found for ${GAME}. Train first with: golds go ${GAME}"
+if [[ -z "${MODEL}" ]]; then
+    echo "No trained model found for ${GAME}."
+    echo "Train first with: golds go ${GAME}"
     exit 1
 fi
 
-# The trainer nests under the game name
-EXP_DIR="${OUTPUT_DIR}/${GAME}"
-if [[ ! -d "${EXP_DIR}" ]]; then
-    EXP_DIR="${OUTPUT_DIR}"
-fi
+# EXP_DIR is the parent that contains best/, models/, etc.
+# e.g. outputs/test_pong/pong/ or outputs/pong_20260320-0300/pong/
+EXP_DIR=$(dirname "$(dirname "${MODEL}")")
 
-echo "Recording ${GAME} from ${EXP_DIR}..."
+echo "Game: ${GAME}"
+echo "Model: ${MODEL}"
+echo "Recording gameplay..."
+
 bash scripts/record_best_mp4.sh "${EXP_DIR}" --steps 5000
 
 # Find the generated MP4
 MP4=$(ls -t "${EXP_DIR}/videos/"*.mp4 2>/dev/null | head -1)
 
 if [[ -z "${MP4}" ]]; then
-    echo "No MP4 generated. Check if a model exists in ${EXP_DIR}"
+    echo "No MP4 generated. Check the output above for errors."
     exit 1
 fi
 
 echo "Video saved: ${MP4}"
 
-# Open the video (works on macOS, Linux with xdg-open, WSL2 with explorer.exe)
+# Open the video (macOS, Linux, WSL2)
 if command -v open >/dev/null 2>&1; then
     open "${MP4}"
-elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "${MP4}"
 elif command -v explorer.exe >/dev/null 2>&1; then
-    # WSL2: convert Linux path to Windows path
     WIN_PATH=$(wslpath -w "${MP4}")
     explorer.exe "${WIN_PATH}"
+elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "${MP4}"
 else
     echo "Open manually: ${MP4}"
 fi
