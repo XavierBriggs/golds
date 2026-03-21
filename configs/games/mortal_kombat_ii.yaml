@@ -12,13 +12,18 @@ environment:
   players: 2
   opponent: self_play
   state: Level1.LiuKangVsJax.2P
-  reward_regime: clipped
+  clip_reward: false
+  reward_regime: raw
+  max_episode_steps: 10000
 
 ppo:
   learning_rate: 2.5e-4
-  n_steps: 128
-  ent_coef: 0.001
+  n_steps: 256
+  ent_coef: 0.005
   batch_size: 256
+  clip_range: 0.2
+  lr_schedule: linear
+  clip_schedule: linear
 
 training:
   # Round 2 long-form target + self-play snapshots for opponents

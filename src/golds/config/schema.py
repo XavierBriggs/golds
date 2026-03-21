@@ -73,6 +73,16 @@ class EnvironmentConfig(BaseModel):
         default="clipped",
         description="Reward handling: clipped={-1,0,+1}, raw=game score, normalized=VecNormalize",
     )
+    x_pos_reward_scale: float = Field(
+        default=0.0,
+        ge=0,
+        description="Scale for x-position reward shaping (0 = disabled). Platformers only.",
+    )
+    max_episode_steps: int = Field(
+        default=0,
+        ge=0,
+        description="Max steps per episode before truncation (0 = disabled). Useful for fighting games.",
+    )
 
 
 class TrainingConfig(BaseModel):

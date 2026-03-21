@@ -145,6 +145,8 @@ def make_retro_env(
     opponent_model_path: str | None = None,
     opponent_snapshot_dir: str | None = None,
     opponent_reload_interval_steps: int = 500,
+    x_pos_reward_scale: float = 0.0,
+    max_episode_steps: int = 0,
 ) -> gym.Env:
     """Create a single retro environment with preprocessing.
 
@@ -174,6 +176,18 @@ def make_retro_env(
 
     # Add Monitor so SB3 evaluation uses true episode returns/lengths via info["episode"].
     env = Monitor(env)
+
+    # Apply x-position reward shaping for platformers (before frame skip so info is fresh)
+    if x_pos_reward_scale > 0:
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        env = PlatformerRewardWrapper(env, scale=x_pos_reward_scale, game=game)
+
+    # Apply time limit for fighting games
+    if max_episode_steps > 0:
+        from golds.environments.retro.wrappers import TimeLimitWrapper
+
+        env = TimeLimitWrapper(env, max_steps=max_episode_steps)
 
     # Apply frame skipping
     if frame_skip > 1:
@@ -227,12 +241,21 @@ def make_retro_vec_env(
         "grayscale": True,
         "clip_reward": True,
         "frame_skip": 4,
+        "x_pos_reward_scale": 0.0,
+        "max_episode_steps": 0,
     }
 
     if wrapper_kwargs:
         # Retro preprocessing does not support Atari-specific options like
         # `terminal_on_life_loss`; ignore unknown keys.
-        allowed = {"screen_size", "grayscale", "clip_reward", "frame_skip"}
+        allowed = {
+            "screen_size",
+            "grayscale",
+            "clip_reward",
+            "frame_skip",
+            "x_pos_reward_scale",
+            "max_episode_steps",
+        }
         filtered = {k: v for k, v in wrapper_kwargs.items() if k in allowed}
         default_kwargs.update(filtered)
 

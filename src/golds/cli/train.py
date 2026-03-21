@@ -37,8 +37,11 @@ def train_run(
     if device != "auto":
         exp_config.training.device = device
 
-    # Create output directory for this experiment
-    exp_output = output / exp_config.name
+    # Create timestamped output directory (matches go() / make_output_dir() pattern)
+    from datetime import datetime
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    exp_output = output / f"{exp_config.name}_{timestamp}"
     exp_output.mkdir(parents=True, exist_ok=True)
 
     # Run training

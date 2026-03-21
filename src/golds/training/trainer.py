@@ -91,6 +91,8 @@ class Trainer:
             wrapper_kwargs={
                 "terminal_on_life_loss": env_config.terminal_on_life_loss,
                 "clip_reward": env_config.clip_reward,
+                "x_pos_reward_scale": env_config.x_pos_reward_scale,
+                "max_episode_steps": env_config.max_episode_steps,
             },
         )
 

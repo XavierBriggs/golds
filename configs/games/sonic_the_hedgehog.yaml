@@ -9,13 +9,17 @@ environment:
   n_envs: 24
   terminal_on_life_loss: false
   state: null  # Uses registry default (GreenHillZone.Act1)
-  reward_regime: clipped
+  clip_reward: false
+  reward_regime: raw
+  x_pos_reward_scale: 0.1
 
 ppo:
   learning_rate: 2.5e-4
-  n_steps: 128
-  ent_coef: 0.001
+  n_steps: 256
+  ent_coef: 0.005
   batch_size: 256
+  lr_schedule: linear
+  clip_schedule: linear
 
 training:
   # Round 2 long-form target

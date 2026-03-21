@@ -13,6 +13,36 @@ from rich.table import Table
 console = Console()
 
 
+def _auto_import_roms() -> None:
+    """Import ROMs from the ``roms/`` directory if present.
+
+    This compensates for ``uv sync`` wiping site-packages (and therefore
+    previously-imported ROMs). The call is fast and idempotent.
+    """
+    roms_dir = Path("roms")
+    if not roms_dir.exists():
+        return
+    has_roms = (
+        any(roms_dir.glob("*.nes"))
+        or any(roms_dir.glob("*.gen"))
+        or any(roms_dir.glob("*.gb"))
+        or any(roms_dir.glob("*.sfc"))
+        or any(roms_dir.glob("*.smc"))
+    )
+    if not has_roms:
+        return
+    import subprocess
+
+    try:
+        subprocess.run(
+            ["python", "-m", "retro.import", str(roms_dir)],
+            capture_output=True,
+            timeout=30,
+        )
+    except Exception:
+        pass  # Best-effort; setup command handles diagnostics
+
+
 def find_game_config(game_id: str, config_dir: Path | None = None) -> Path | None:
     """Find the YAML config file for a game.
 
@@ -46,7 +76,11 @@ def make_output_dir(game_id: str, base: Path | None = None) -> Path:
 
 
 def _find_latest_checkpoint(game_id: str) -> Path | None:
-    """Find the latest checkpoint for a game across all output directories."""
+    """Find the latest checkpoint for a game across all output directories.
+
+    Supports both the unified structure (``outputs/{game}_{timestamp}/best/``)
+    and the legacy nested structure (``outputs/{game}_{timestamp}/{game}/best/``).
+    """
     outputs = Path("outputs")
     if not outputs.exists():
         return None
@@ -55,22 +89,35 @@ def _find_latest_checkpoint(game_id: str) -> Path | None:
     for d in outputs.iterdir():
         if not d.is_dir() or not d.name.startswith(game_id):
             continue
-        # Check for best eval model first
-        best = d / game_id / "best" / "best_model.zip"
+
+        # Unified structure: outputs/{game}_{timestamp}/best/best_model.zip
+        best = d / "best" / "best_model.zip"
         if best.exists():
             candidates.append((best.stat().st_mtime, best))
             continue
-        # Then check for final model
-        final = d / game_id / "models" / "final_model.zip"
+        # Legacy nested: outputs/{game}_{timestamp}/{game}/best/best_model.zip
+        best_legacy = d / game_id / "best" / "best_model.zip"
+        if best_legacy.exists():
+            candidates.append((best_legacy.stat().st_mtime, best_legacy))
+            continue
+
+        # Final model (unified then legacy)
+        final = d / "models" / "final_model.zip"
         if final.exists():
             candidates.append((final.stat().st_mtime, final))
             continue
-        # Then latest checkpoint
-        ckpt_dir = d / game_id / "models" / "checkpoints"
-        if ckpt_dir.exists():
-            ckpts = sorted(ckpt_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime)
-            if ckpts:
-                candidates.append((ckpts[-1].stat().st_mtime, ckpts[-1]))
+        final_legacy = d / game_id / "models" / "final_model.zip"
+        if final_legacy.exists():
+            candidates.append((final_legacy.stat().st_mtime, final_legacy))
+            continue
+
+        # Latest checkpoint (unified then legacy)
+        for ckpt_dir in [d / "models" / "checkpoints", d / game_id / "models" / "checkpoints"]:
+            if ckpt_dir.exists():
+                ckpts = sorted(ckpt_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime)
+                if ckpts:
+                    candidates.append((ckpts[-1].stat().st_mtime, ckpts[-1]))
+                    break
 
     if not candidates:
         return None
@@ -93,6 +140,8 @@ def go(
     from golds.config.loader import ConfigLoader
     from golds.training.trainer import Trainer
     from golds.utils.device import get_device
+
+    _auto_import_roms()
 
     # Find config
     config_path = find_game_config(game)
@@ -180,6 +229,8 @@ def train_all(
     from golds.config.loader import ConfigLoader
     from golds.results.store import ResultStore
     from golds.training.trainer import Trainer
+
+    _auto_import_roms()
 
     # Determine game list
     configs_dir = Path("configs/games")

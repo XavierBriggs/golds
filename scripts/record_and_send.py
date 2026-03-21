@@ -11,7 +11,7 @@ from golds.environments.registry import GameRegistry
 game = sys.argv[1] if len(sys.argv) > 1 else "ms_pacman"
 steps = int(sys.argv[2]) if len(sys.argv) > 2 else 3000
 
-# Find latest best model
+# Find latest best model (unified then legacy directory layout)
 candidates = sorted(glob.glob(f"outputs/{game}*/best/best_model.zip"))
 if not candidates:
     candidates = sorted(glob.glob(f"outputs/{game}*/{game}/best/best_model.zip"))
@@ -19,6 +19,10 @@ if not candidates:
     candidates = sorted(glob.glob(f"outputs/{game}*/models/final_model.zip"))
 if not candidates:
     candidates = sorted(glob.glob(f"outputs/{game}*/{game}/models/final_model.zip"))
+if not candidates:
+    candidates = sorted(glob.glob(f"outputs/{game}*/models/checkpoints/*.zip"))
+if not candidates:
+    candidates = sorted(glob.glob(f"outputs/{game}*/{game}/models/checkpoints/*.zip"))
 if not candidates:
     print(f"No model found for {game}")
     sys.exit(1)

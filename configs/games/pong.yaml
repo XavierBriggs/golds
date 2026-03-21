@@ -14,6 +14,8 @@ ppo:
   learning_rate: 2.5e-4
   n_steps: 128
   ent_coef: 0.01
+  lr_schedule: linear
+  clip_schedule: linear
 
 training:
   # Pong is simpler, needs less training

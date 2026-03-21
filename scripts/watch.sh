@@ -7,7 +7,9 @@ set -euo pipefail
 
 GAME="${1:?Usage: bash scripts/watch.sh <game_id>}"
 
-# Find the best model across all output directories for this game
+# Find the best model across all output directories for this game.
+# Supports unified (outputs/{game}_{ts}/best/) and legacy nested
+# (outputs/{game}_{ts}/{game}/best/) directory layouts.
 MODEL=$(find outputs -path "*${GAME}*/best/best_model.zip" -o \
                      -path "*${GAME}*/best_training/best_training_model.zip" -o \
                      -path "*${GAME}*/models/final_model.zip" 2>/dev/null | \
@@ -20,7 +22,8 @@ if [[ -z "${MODEL}" ]]; then
 fi
 
 # EXP_DIR is the parent that contains best/, models/, etc.
-# e.g. outputs/test_pong/pong/ or outputs/pong_20260320-0300/pong/
+# Unified:  outputs/pong_20260321-0540/best/best_model.zip  -> outputs/pong_20260321-0540
+# Legacy:   outputs/pong_20260321-0540/pong/best/best_model.zip -> outputs/pong_20260321-0540/pong
 EXP_DIR=$(dirname "$(dirname "${MODEL}")")
 
 echo "Game: ${GAME}"
