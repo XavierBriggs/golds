@@ -124,9 +124,11 @@ def make_atari_vec_env(
         "clip_reward": True,
     }
 
-    # Merge with user-provided kwargs
+    # Merge with user-provided kwargs, filtering out retro-specific keys
     if wrapper_kwargs:
-        default_wrapper_kwargs.update(wrapper_kwargs)
+        _atari_allowed = {"noop_max", "frame_skip", "screen_size", "terminal_on_life_loss", "clip_reward"}
+        filtered = {k: v for k, v in wrapper_kwargs.items() if k in _atari_allowed}
+        default_wrapper_kwargs.update(filtered)
 
     # Use a callable env constructor so each SubprocVecEnv worker imports/registers Atari envs.
     def env_ctor(**env_kwargs: Any) -> gym.Env:
