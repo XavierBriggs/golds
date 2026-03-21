@@ -174,7 +174,7 @@ GameRegistry.register(
         game_id="super_mario_bros",
         platform="retro",
         display_name="Super Mario Bros. (NES)",
-        env_id="SuperMarioBros-Nes",
+        env_id="SuperMarioBros-Nes-v0",
         default_state="Level1-1",
     )
 )
@@ -184,7 +184,7 @@ GameRegistry.register(
         game_id="super_mario_bros_2_japan",
         platform="retro",
         display_name="Super Mario Bros. 2 Japan (Lost Levels)",
-        env_id="SuperMarioBros2Japan-Nes",
+        env_id="SuperMarioBros2Japan-Nes-v0",
         default_state="Level1-1",
     )
 )
@@ -194,7 +194,7 @@ GameRegistry.register(
         game_id="tetris",
         platform="retro",
         display_name="Tetris (Game Boy)",
-        env_id="Tetris-GameBoy",
+        env_id="Tetris-GameBoy-v0",
         default_state="Level0.TypeA",
     )
 )
@@ -204,7 +204,7 @@ GameRegistry.register(
         game_id="mortal_kombat_ii",
         platform="retro",
         display_name="Mortal Kombat II (Genesis)",
-        env_id="MortalKombatII-Genesis",
+        env_id="MortalKombatII-Genesis-v0",
     )
 )
 
@@ -213,7 +213,7 @@ GameRegistry.register(
         game_id="sonic_the_hedgehog",
         platform="retro",
         display_name="Sonic the Hedgehog (Genesis)",
-        env_id="SonicTheHedgehog-Genesis",
+        env_id="SonicTheHedgehog-Genesis-v0",
         default_state="GreenHillZone.Act1",
     )
 )
@@ -223,7 +223,7 @@ GameRegistry.register(
         game_id="street_fighter_ii",
         platform="retro",
         display_name="Street Fighter II (Genesis)",
-        env_id="StreetFighterIISpecialChampionEdition-Genesis",
+        env_id="StreetFighterIISpecialChampionEdition-Genesis-v0",
         default_state=None,
     )
 )
@@ -233,7 +233,7 @@ GameRegistry.register(
         game_id="mega_man_2",
         platform="retro",
         display_name="Mega Man 2 (NES)",
-        env_id="MegaMan2-Nes",
+        env_id="MegaMan2-Nes-v0",
         default_state=None,
     )
 )

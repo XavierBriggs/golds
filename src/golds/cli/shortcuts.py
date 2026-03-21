@@ -475,13 +475,13 @@ def setup() -> None:
         "montezuma_revenge",
     ]
     retro_games_map = {
-        "super_mario_bros_2_japan": "SuperMarioBros2Japan-Nes",
-        "sonic_the_hedgehog": "SonicTheHedgehog-Genesis",
-        "mortal_kombat_ii": "MortalKombatII-Genesis",
-        "tetris": "Tetris-GameBoy",
-        "super_mario_bros": "SuperMarioBros-Nes",
-        "street_fighter_ii": "StreetFighterIISpecialChampionEdition-Genesis",
-        "mega_man_2": "MegaMan2-Nes",
+        "super_mario_bros_2_japan": "SuperMarioBros2Japan-Nes-v0",
+        "sonic_the_hedgehog": "SonicTheHedgehog-Genesis-v0",
+        "mortal_kombat_ii": "MortalKombatII-Genesis-v0",
+        "tetris": "Tetris-GameBoy-v0",
+        "super_mario_bros": "SuperMarioBros-Nes-v0",
+        "street_fighter_ii": "StreetFighterIISpecialChampionEdition-Genesis-v0",
+        "mega_man_2": "MegaMan2-Nes-v0",
     }
 
     # Atari games are always ready if ale-py is installed
