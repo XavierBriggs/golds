@@ -271,6 +271,7 @@ class Trainer:
                 video_freq=self.config.training.video_freq,
                 video_length=self.config.training.video_length,
                 n_envs=self.config.environment.n_envs,
+                action_set=self.config.environment.action_set,
                 verbose=1,
             )
             callbacks.append(video_callback)

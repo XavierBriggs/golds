@@ -312,6 +312,7 @@ class VideoProgressCallback(BaseCallback):
         video_freq: int = 10_000_000,
         video_length: int = 4000,
         n_envs: int = 1,
+        action_set: str = "full",
         verbose: int = 0,
     ) -> None:
         super().__init__(verbose)
@@ -320,6 +321,7 @@ class VideoProgressCallback(BaseCallback):
         self.video_freq = video_freq
         self.video_length = video_length
         self.n_envs = n_envs
+        self.action_set = action_set
         self._last_video_step = -1
         self._video_dir = self.output_dir / "videos"
         self._recorded_start = False
@@ -393,6 +395,7 @@ class VideoProgressCallback(BaseCallback):
             "video_length": self.video_length,
             "steps": self.num_timesteps,
             "reward_str": reward_str,
+            "action_set": self.action_set,
         })
 
         script = (
@@ -402,7 +405,8 @@ class VideoProgressCallback(BaseCallback):
             "from stable_baselines3.common.vec_env import VecVideoRecorder\n"
             "from golds.environments.factory import EnvironmentFactory\n"
             "video_name = args['game_id'] + '_' + args['label']\n"
-            "env = EnvironmentFactory.create_eval_env(game_id=args['game_id'], frame_stack=4, seed=0)\n"
+            "env = EnvironmentFactory.create_eval_env(game_id=args['game_id'], frame_stack=4, seed=0, "
+            "wrapper_kwargs={'action_set': args['action_set']})\n"
             "env = VecVideoRecorder(env, args['video_dir'], "
             "record_video_trigger=lambda x: x == 0, "
             "video_length=args['video_length'], name_prefix=video_name)\n"
