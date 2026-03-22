@@ -10,7 +10,7 @@ environment:
   terminal_on_life_loss: false
   players: 2
   opponent: self_play
-  state: Level1.SubzeroVsRaiden.2P
+  state: null  # Uses default state
   clip_reward: false
   reward_regime: raw
   action_set: fighter
@@ -27,7 +27,7 @@ ppo:
   clip_schedule: linear
 
 training:
-  total_timesteps: 30000000
+  total_timesteps: 100000000
   eval_freq: 200000
   eval_episodes: 3
   eval_deterministic: false
