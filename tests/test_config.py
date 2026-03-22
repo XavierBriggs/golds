@@ -113,3 +113,54 @@ class TestConfigLoader:
         )
         assert config.environment.game_id == "space_invaders"
         assert config.environment.n_envs == 4
+
+
+class TestV3ConfigFields:
+    """Tests for v3 training upgrade config fields."""
+
+    def test_environment_config_v3_fields(self):
+        from golds.config.schema import EnvironmentConfig
+
+        cfg = EnvironmentConfig(
+            platform="retro",
+            game_id="sonic_the_hedgehog",
+            action_set="platformer",
+            sticky_action_prob=0.25,
+            levels=["GreenHillZone.Act1", "GreenHillZone.Act2"],
+            death_penalty=-1.0,
+            collectible_reward_scale=0.01,
+            time_penalty=-0.001,
+        )
+        assert cfg.action_set == "platformer"
+        assert cfg.sticky_action_prob == 0.25
+        assert len(cfg.levels) == 2
+        assert cfg.death_penalty == -1.0
+        assert cfg.collectible_reward_scale == 0.01
+        assert cfg.time_penalty == -0.001
+
+    def test_environment_config_v3_defaults(self):
+        from golds.config.schema import EnvironmentConfig
+
+        cfg = EnvironmentConfig(platform="atari", game_id="pong")
+        assert cfg.action_set == "full"
+        assert cfg.sticky_action_prob == 0.0
+        assert cfg.levels == []
+        assert cfg.death_penalty == 0.0
+        assert cfg.collectible_reward_scale == 0.0
+        assert cfg.time_penalty == 0.0
+
+    def test_training_config_rnd_fields(self):
+        from golds.config.schema import TrainingConfig
+
+        cfg = TrainingConfig(rnd_enabled=True, rnd_reward_scale=0.05, rnd_learning_rate=5e-5)
+        assert cfg.rnd_enabled is True
+        assert cfg.rnd_reward_scale == 0.05
+        assert cfg.rnd_learning_rate == 5e-5
+
+    def test_training_config_rnd_defaults(self):
+        from golds.config.schema import TrainingConfig
+
+        cfg = TrainingConfig()
+        assert cfg.rnd_enabled is False
+        assert cfg.rnd_reward_scale == 0.01
+        assert cfg.rnd_learning_rate == 1e-4

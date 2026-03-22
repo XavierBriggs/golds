@@ -93,6 +93,12 @@ class Trainer:
                 "clip_reward": env_config.clip_reward,
                 "x_pos_reward_scale": env_config.x_pos_reward_scale,
                 "max_episode_steps": env_config.max_episode_steps,
+                "action_set": env_config.action_set,
+                "sticky_action_prob": env_config.sticky_action_prob,
+                "levels": env_config.levels if env_config.levels else None,
+                "death_penalty": env_config.death_penalty,
+                "collectible_reward_scale": env_config.collectible_reward_scale,
+                "time_penalty": env_config.time_penalty,
             },
         )
 
@@ -123,6 +129,12 @@ class Trainer:
             opponent_mode=opponent_mode,
             opponent_model_path=opponent_model_path,
             opponent_snapshot_dir=opponent_snapshot_dir,
+            wrapper_kwargs={
+                "terminal_on_life_loss": False,
+                "clip_reward": env_config.clip_reward,
+                "action_set": env_config.action_set,
+                "sticky_action_prob": 0.0,  # No sticky actions during eval
+            },
         )
 
     def _create_model(self, train_env: VecEnv) -> PPO:

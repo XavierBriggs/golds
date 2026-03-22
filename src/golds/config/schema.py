@@ -83,6 +83,35 @@ class EnvironmentConfig(BaseModel):
         ge=0,
         description="Max steps per episode before truncation (0 = disabled). Useful for fighting games.",
     )
+    action_set: Literal["full", "platformer", "fighter", "puzzle"] = Field(
+        default="full",
+        description="Action space reduction set. 'full' uses all filtered actions.",
+    )
+    sticky_action_prob: float = Field(
+        default=0.0,
+        ge=0,
+        le=1,
+        description="Probability of repeating previous action (0 = disabled, 0.25 = standard).",
+    )
+    levels: list[str] = Field(
+        default_factory=list,
+        description="Level rotation list for multi-level training. Empty = single default level.",
+    )
+    death_penalty: float = Field(
+        default=0.0,
+        le=0,
+        description="Penalty applied on episode termination (should be negative or 0).",
+    )
+    collectible_reward_scale: float = Field(
+        default=0.0,
+        ge=0,
+        description="Scale for collectible bonuses (rings/coins). 0 = disabled.",
+    )
+    time_penalty: float = Field(
+        default=0.0,
+        le=0,
+        description="Per-step penalty to encourage speed (should be negative or 0).",
+    )
 
 
 class TrainingConfig(BaseModel):
@@ -122,6 +151,20 @@ class TrainingConfig(BaseModel):
     self_play_sampling: Literal["uniform", "proportional", "pfsp"] = Field(
         default="uniform",
         description="Opponent sampling strategy for self-play (uniform, proportional, or pfsp).",
+    )
+    rnd_enabled: bool = Field(
+        default=False,
+        description="Enable RND (Random Network Distillation) intrinsic reward.",
+    )
+    rnd_reward_scale: float = Field(
+        default=0.01,
+        ge=0,
+        description="Scale factor for RND intrinsic reward.",
+    )
+    rnd_learning_rate: float = Field(
+        default=1e-4,
+        ge=0,
+        description="Learning rate for RND predictor network.",
     )
 
 

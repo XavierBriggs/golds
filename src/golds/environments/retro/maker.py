@@ -147,6 +147,12 @@ def make_retro_env(
     opponent_reload_interval_steps: int = 500,
     x_pos_reward_scale: float = 0.0,
     max_episode_steps: int = 0,
+    action_set: str = "full",
+    sticky_action_prob: float = 0.0,
+    levels: list | None = None,
+    death_penalty: float = 0.0,
+    collectible_reward_scale: float = 0.0,
+    time_penalty: float = 0.0,
 ) -> gym.Env:
     """Create a single retro environment with preprocessing.
 
@@ -174,26 +180,57 @@ def make_retro_env(
         render_mode="rgb_array",
     )
 
-    # Add Monitor so SB3 evaluation uses true episode returns/lengths via info["episode"].
-    env = Monitor(env)
+    # 1. Action space reduction (closest to raw env)
+    if action_set != "full":
+        from golds.environments.retro.wrappers import DiscreteActionWrapper
 
-    # Apply x-position reward shaping for platformers (before frame skip so info is fresh)
-    if x_pos_reward_scale > 0:
+        env = DiscreteActionWrapper(env, action_set=action_set)
+
+    # 2. Sticky actions (break determinism)
+    if sticky_action_prob > 0:
+        from golds.environments.retro.wrappers import StickyActionWrapper
+
+        env = StickyActionWrapper(env, stickprob=sticky_action_prob)
+
+    # 3. Multi-level rotation
+    if levels:
+        from golds.environments.retro.wrappers import MultiLevelWrapper
+
+        env = MultiLevelWrapper(env, levels=levels)
+
+    # 4. Reward shaping (before Monitor so episode stats include shaped rewards)
+    has_shaping = (
+        x_pos_reward_scale > 0
+        or death_penalty != 0
+        or collectible_reward_scale > 0
+        or time_penalty != 0
+    )
+    if has_shaping:
         from golds.environments.retro.wrappers import PlatformerRewardWrapper
 
-        env = PlatformerRewardWrapper(env, scale=x_pos_reward_scale, game=game)
+        env = PlatformerRewardWrapper(
+            env,
+            scale=x_pos_reward_scale,
+            game=game,
+            death_penalty=death_penalty,
+            collectible_reward_scale=collectible_reward_scale,
+            time_penalty=time_penalty,
+        )
 
-    # Apply time limit for fighting games
+    # 5. Time limit for fighting games
     if max_episode_steps > 0:
         from golds.environments.retro.wrappers import TimeLimitWrapper
 
         env = TimeLimitWrapper(env, max_steps=max_episode_steps)
 
-    # Apply frame skipping
+    # 6. Monitor AFTER reward shaping so info["episode"] captures shaped rewards
+    env = Monitor(env)
+
+    # 7. Frame skipping
     if frame_skip > 1:
         env = FrameSkip(env, skip=frame_skip)
 
-    # Apply preprocessing
+    # 8. Preprocessing
     env = RetroPreprocessing(
         env,
         screen_size=screen_size,
@@ -243,6 +280,12 @@ def make_retro_vec_env(
         "frame_skip": 4,
         "x_pos_reward_scale": 0.0,
         "max_episode_steps": 0,
+        "action_set": "full",
+        "sticky_action_prob": 0.0,
+        "levels": None,
+        "death_penalty": 0.0,
+        "collectible_reward_scale": 0.0,
+        "time_penalty": 0.0,
     }
 
     if wrapper_kwargs:
@@ -255,6 +298,12 @@ def make_retro_vec_env(
             "frame_skip",
             "x_pos_reward_scale",
             "max_episode_steps",
+            "action_set",
+            "sticky_action_prob",
+            "levels",
+            "death_penalty",
+            "collectible_reward_scale",
+            "time_penalty",
         }
         filtered = {k: v for k, v in wrapper_kwargs.items() if k in allowed}
         default_kwargs.update(filtered)
