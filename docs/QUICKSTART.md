@@ -26,15 +26,34 @@ That's it. This will:
     golds go breakout --device cpu             # Force CPU
     golds go pong --resume                     # Resume previous run
 
+## Action Sets
+
+Retro games use reduced action sets for faster learning. Instead of ~126
+raw button combinations, the agent sees only the meaningful ones:
+
+| Action set | Actions | Games |
+|------------|---------|-------|
+| `platformer` | 9 (move, jump, run, duck) | Mario, Sonic, Mega Man |
+| `fighter` | 12 (move, punch, kick, combos) | MK2, Street Fighter |
+| `puzzle` | 5 (move, rotate) | Tetris |
+| `full` | All filtered (~126) | Default / fallback |
+
+Set in your game config under `environment:`:
+
+```yaml
+environment:
+  action_set: platformer
+```
+
 ## Evaluate a Trained Model
 
 After training completes, the output path is printed. Evaluate with:
 
-    golds eval model outputs/pong_YYYYMMDD-HHMM/pong/best/best_model.zip --game pong --episodes 10
+    golds eval model outputs/pong_YYYYMMDD-HHMM/best/best_model.zip --game pong --episodes 10
 
 Or run a full benchmark (100 episodes x 3 seeds):
 
-    golds eval benchmark outputs/pong_YYYYMMDD-HHMM/pong/best/best_model.zip --game pong
+    golds eval benchmark outputs/pong_YYYYMMDD-HHMM/best/best_model.zip --game pong
 
 ## Train Multiple Games
 
@@ -74,7 +93,7 @@ Then open http://localhost:6006 in your browser.
 
 ## Record Gameplay Video
 
-    bash scripts/record_best_mp4.sh pong outputs/pong_YYYYMMDD-HHMM/pong
+    bash scripts/record_best_mp4.sh pong outputs/pong_YYYYMMDD-HHMM
 
 ## Available Games
 
@@ -96,6 +115,36 @@ To set up retro games:
     golds rom import ./roms
     golds rom list
 
+## Advanced: Multi-Level Training
+
+Train across multiple levels simultaneously for better generalization.
+Each parallel environment randomly selects a level on reset:
+
+```yaml
+environment:
+  levels:
+    - GreenHillZone.Act1
+    - GreenHillZone.Act2
+    - MarbleZone.Act1
+```
+
+This prevents the agent from memorizing a single level layout.
+
+## Advanced: Exploration Bonus (RND)
+
+Enable Random Network Distillation for exploration in sparse-reward
+or hard-exploration games. RND gives the agent a bonus for visiting
+novel states:
+
+```yaml
+training:
+  rnd_enabled: true
+  rnd_reward_scale: 0.01
+```
+
+Useful for platformers where the agent gets stuck at obstacles.
+Not needed for fighting games (health delta is already dense).
+
 ## System Check
 
 Run diagnostics anytime:
@@ -104,14 +153,52 @@ Run diagnostics anytime:
 
 ## Common Issues
 
-**"Model not found"** -- Check the output path. The trainer creates a
-nested directory: `outputs/<run>/<game_name>/best/best_model.zip`
+**"Model not found"** -- Check the output path. Models are saved at:
+`outputs/<game>_YYYYMMDD-HHMM/best/best_model.zip`
 
 **Training is slow** -- Make sure your GPU is detected: `golds doctor`.
 On Mac, MPS should be auto-detected. On Linux/WSL, CUDA should be available.
 
 **"stable-retro not installed"** -- Retro games need an extra package:
 `uv pip install stable-retro`. Then import ROMs with `golds rom import ./roms`.
+
+**"Agent gets stuck"** -- Enable sticky actions (`sticky_action_prob: 0.25`)
+and reduce the action space (`action_set: platformer`). Consider enabling
+RND exploration (`rnd_enabled: true`) and extended reward shaping
+(`death_penalty: -1.0`, `time_penalty: -0.001`).
+
+## Config Reference
+
+### Environment fields
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `platform` | required | `atari` or `retro` |
+| `game_id` | required | Game identifier |
+| `n_envs` | 8 | Parallel environments |
+| `frame_stack` | 4 | Frames to stack |
+| `frame_skip` | 4 | Frames to skip |
+| `clip_reward` | true | Clip rewards to {-1,0,+1} |
+| `reward_regime` | clipped | `clipped`, `raw`, or `normalized` |
+| `action_set` | full | `full`, `platformer`, `fighter`, `puzzle` |
+| `sticky_action_prob` | 0.0 | Probability of repeating previous action |
+| `levels` | [] | Level rotation list (empty = single level) |
+| `x_pos_reward_scale` | 0.0 | X-position progress shaping scale |
+| `death_penalty` | 0.0 | Penalty on termination (negative) |
+| `collectible_reward_scale` | 0.0 | Bonus for rings/coins |
+| `time_penalty` | 0.0 | Per-step penalty (negative) |
+| `max_episode_steps` | 0 | Episode truncation limit |
+
+### Training fields
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `total_timesteps` | 10M | Training budget |
+| `eval_freq` | 50K | Evaluation interval |
+| `save_freq` | 100K | Checkpoint interval |
+| `device` | auto | `auto`, `cuda`, `mps`, `cpu` |
+| `rnd_enabled` | false | Enable RND exploration |
+| `rnd_reward_scale` | 0.01 | RND intrinsic reward scale |
 
 ## Command Reference
 
