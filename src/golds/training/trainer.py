@@ -100,6 +100,10 @@ class Trainer:
                 "collectible_reward_scale": env_config.collectible_reward_scale,
                 "time_penalty": env_config.time_penalty,
             },
+            rnd_enabled=self.config.training.rnd_enabled,
+            rnd_reward_scale=self.config.training.rnd_reward_scale,
+            rnd_learning_rate=self.config.training.rnd_learning_rate,
+            device=self.config.training.device,
         )
 
     def _create_eval_env(self) -> VecEnv:

@@ -110,6 +110,17 @@ class EnvironmentFactory:
 
             vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
 
+        # Optional RND exploration reward
+        if kwargs.get("rnd_enabled", False):
+            from golds.training.rnd import RNDRewardWrapper
+
+            rnd_scale = kwargs.get("rnd_reward_scale", 0.01)
+            rnd_lr = kwargs.get("rnd_learning_rate", 1e-4)
+            rnd_device = str(kwargs.get("device", "cpu"))
+            vec_env = RNDRewardWrapper(
+                vec_env, scale=rnd_scale, learning_rate=rnd_lr, device=rnd_device,
+            )
+
         # Retro self-play/opponent wrapper must happen after frame stacking/transpose
         # so opponent policies see the same observation format as the learner.
         if game.platform == "retro" and players == 2 and opponent_mode != "none":
