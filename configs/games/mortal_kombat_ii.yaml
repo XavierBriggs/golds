@@ -10,7 +10,7 @@ environment:
   terminal_on_life_loss: false
   players: 2
   opponent: self_play
-  state: Level1.LiuKangVsJax.2P
+  state: Level1.SubzeroVsRaiden.2P
   clip_reward: false
   reward_regime: raw
   action_set: fighter
