@@ -34,3 +34,4 @@ training:
   eval_deterministic: false
   save_freq: 500000
   seed: 42
+  video_freq: 10000000

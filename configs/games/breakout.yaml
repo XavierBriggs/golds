@@ -22,3 +22,4 @@ training:
   total_timesteps: 15000000
   eval_freq: 50000
   seed: 42
+  video_freq: 10000000

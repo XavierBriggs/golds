@@ -31,3 +31,4 @@ training:
   eval_episodes: 5
   save_freq: 500000
   seed: 42
+  video_freq: 10000000

@@ -152,6 +152,16 @@ class TrainingConfig(BaseModel):
         default="uniform",
         description="Opponent sampling strategy for self-play (uniform, proportional, or pfsp).",
     )
+    video_freq: int = Field(
+        default=0,
+        ge=0,
+        description="Record and send a gameplay video every N timesteps (0 = disabled). Also records at start and end.",
+    )
+    video_length: int = Field(
+        default=4000,
+        ge=100,
+        description="Number of frames per recorded video.",
+    )
     rnd_enabled: bool = Field(
         default=False,
         description="Enable RND (Random Network Distillation) intrinsic reward.",

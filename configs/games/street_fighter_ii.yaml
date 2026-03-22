@@ -35,3 +35,4 @@ training:
   self_play_snapshot_freq: 500000
   self_play_max_snapshots: 5
   seed: 42
+  video_freq: 10000000

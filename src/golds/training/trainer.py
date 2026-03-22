@@ -19,6 +19,7 @@ from golds.training.callbacks import (
     SafeCheckpointCallback,
     SaveOnBestTrainingRewardCallback,
     SelfPlaySnapshotCallback,
+    VideoProgressCallback,
     create_eval_callback,
 )
 from golds.utils.device import get_device
@@ -261,6 +262,18 @@ class Trainer:
                     verbose=0,
                 )
             )
+
+        # Video recording callback (optional)
+        if self.config.training.video_freq > 0:
+            video_callback = VideoProgressCallback(
+                game_id=self.config.environment.game_id,
+                output_dir=self.output_dir,
+                video_freq=self.config.training.video_freq,
+                video_length=self.config.training.video_length,
+                n_envs=self.config.environment.n_envs,
+                verbose=1,
+            )
+            callbacks.append(video_callback)
 
         # Results tracking callback
         results_callback = ResultsCallback(

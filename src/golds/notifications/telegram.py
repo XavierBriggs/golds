@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 
 class TelegramNotifier:
@@ -58,6 +59,53 @@ class TelegramNotifier:
         try:
             req = urllib.request.Request(url, data=data)
             with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    def send_video(self, video_path: str, caption: str = "", parse_mode: str = "HTML") -> bool:
+        """Send a video file via Telegram.
+
+        Args:
+            video_path: Path to the MP4 file.
+            caption: Optional caption (supports HTML).
+            parse_mode: Telegram parse mode.
+
+        Returns:
+            True if sent successfully, False otherwise.
+        """
+        if not self._enabled:
+            return False
+
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendVideo"
+        boundary = "----GoldsBoundary"
+
+        try:
+            with open(video_path, "rb") as f:
+                video_data = f.read()
+
+            body = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+                f"{self.chat_id}\r\n"
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="parse_mode"\r\n\r\n'
+                f"{parse_mode}\r\n"
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="caption"\r\n\r\n'
+                f"{caption}\r\n"
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="video"; '
+                f'filename="{Path(video_path).name}"\r\n'
+                f"Content-Type: video/mp4\r\n\r\n"
+            ).encode() + video_data + f"\r\n--{boundary}--\r\n".encode()
+
+            req = urllib.request.Request(
+                url,
+                data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
                 return resp.status == 200
         except Exception:
             return False

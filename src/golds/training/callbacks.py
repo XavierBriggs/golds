@@ -297,6 +297,139 @@ class VerboseEvalCallback(EvalCallback):
         return ok
 
 
+class VideoProgressCallback(BaseCallback):
+    """Record gameplay videos at regular intervals and send to Telegram.
+
+    Records at: training start (step 0), every ``video_freq`` steps, and training end.
+    Videos are saved locally to ``output_dir/videos/`` and sent via Telegram.
+    """
+
+    def __init__(
+        self,
+        game_id: str,
+        output_dir: str | Path,
+        video_freq: int = 10_000_000,
+        video_length: int = 4000,
+        n_envs: int = 1,
+        verbose: int = 0,
+    ) -> None:
+        super().__init__(verbose)
+        self.game_id = game_id
+        self.output_dir = Path(output_dir)
+        self.video_freq = video_freq
+        self.video_length = video_length
+        self.n_envs = n_envs
+        self._last_video_step = -1
+        self._video_dir = self.output_dir / "videos"
+        self._recorded_start = False
+
+    def _init_callback(self) -> None:
+        self._video_dir.mkdir(parents=True, exist_ok=True)
+
+    def _on_step(self) -> bool:
+        # Record at step 0 (first call)
+        if not self._recorded_start:
+            self._recorded_start = True
+            self._record_and_send(label="start")
+
+        # Record every video_freq steps
+        if (
+            self.video_freq > 0
+            and self.num_timesteps - self._last_video_step >= self.video_freq
+        ):
+            self._last_video_step = self.num_timesteps
+            self._record_and_send(label=f"{self.num_timesteps // 1_000_000}M")
+
+        return True
+
+    def _on_training_end(self) -> None:
+        self._record_and_send(label="final")
+
+    def _record_and_send(self, label: str) -> None:
+        """Record a video and send to Telegram. Best-effort, never crashes training."""
+        import threading
+
+        def _do_record():
+            try:
+                self._record_video(label)
+            except Exception as e:
+                if self.verbose > 0:
+                    print(f"[video] recording failed: {e}")
+
+        # Run in background thread so training isn't blocked
+        t = threading.Thread(target=_do_record, daemon=True)
+        t.start()
+
+    def _record_video(self, label: str) -> None:
+        """Actually record the video and send it."""
+        from stable_baselines3.common.vec_env import VecVideoRecorder
+
+        from golds.environments.factory import EnvironmentFactory
+
+        # Create a fresh eval env
+        env = EnvironmentFactory.create_eval_env(
+            game_id=self.game_id, frame_stack=4, seed=0
+        )
+
+        video_name = f"{self.game_id}_{label}"
+        env = VecVideoRecorder(
+            env,
+            str(self._video_dir),
+            record_video_trigger=lambda x: x == 0,
+            video_length=self.video_length,
+            name_prefix=video_name,
+        )
+
+        # Use current model weights
+        model = self.model
+        obs = env.reset()
+
+        for _ in range(self.video_length):
+            action, _ = model.predict(obs, deterministic=True)
+            obs, _, dones, _ = env.step(action)
+            if dones[0]:
+                obs = env.reset()
+
+        env.close()
+
+        # Find the generated mp4
+        import glob
+
+        mp4_files = sorted(
+            glob.glob(str(self._video_dir / f"{video_name}*.mp4")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        if not mp4_files:
+            return
+
+        mp4_path = mp4_files[0]
+
+        # Get current mean reward for caption
+        reward_str = ""
+        if len(self.model.ep_info_buffer) > 0:
+            mean_reward = np.mean([ep["r"] for ep in self.model.ep_info_buffer])
+            reward_str = f"\nMean Reward: {mean_reward:.1f}"
+
+        if self.verbose > 0:
+            print(f"[video] saved: {mp4_path}")
+
+        # Send to Telegram
+        try:
+            from golds.notifications.telegram import TelegramNotifier
+
+            notifier = TelegramNotifier()
+            if notifier.enabled:
+                caption = (
+                    f"🎮 <b>{self.game_id}</b> — {label}\n"
+                    f"Steps: {self.num_timesteps:,}"
+                    f"{reward_str}"
+                )
+                notifier.send_video(mp4_path, caption=caption)
+        except Exception:
+            pass  # Best-effort
+
+
 class SelfPlaySnapshotCallback(BaseCallback):
     """Periodically save the current policy to a snapshot directory for self-play opponents.
 
@@ -441,15 +574,28 @@ class ResultsCallback(BaseCallback):
 
         wall_time = time.monotonic() - self._start_time
 
-        # Try to get best eval reward from parent callback's best_mean_reward
+        # Try to get best eval reward from sibling eval callback or eval log file
         best_eval_reward = None
-        if hasattr(self, "parent") and self.parent is not None:
-            for cb in getattr(self.parent, "callbacks", []):
-                if hasattr(cb, "best_mean_reward") and hasattr(cb, "best_model_save_path"):
-                    best_eval_reward = (
-                        float(cb.best_mean_reward) if cb.best_mean_reward != -np.inf else None
-                    )
+        # Method 1: walk parent's callback list for EvalCallback.best_mean_reward
+        for parent in [getattr(self, "parent", None)]:
+            if parent is None:
+                continue
+            for cb in getattr(parent, "callbacks", []):
+                if hasattr(cb, "best_mean_reward") and cb.best_mean_reward != -np.inf:
+                    best_eval_reward = float(cb.best_mean_reward)
                     break
+        # Method 2: read from eval log file (npz) if callback lookup failed
+        if best_eval_reward is None:
+            eval_npz = Path(self.output_dir) / "eval" / "evaluations.npz"
+            if eval_npz.exists():
+                try:
+                    data = np.load(str(eval_npz))
+                    if "results" in data:
+                        # results shape: (n_evals, n_episodes)
+                        mean_per_eval = data["results"].mean(axis=1)
+                        best_eval_reward = float(mean_per_eval.max())
+                except Exception:
+                    pass
 
         result = TrainingResult(
             game_id=self.game_id,
