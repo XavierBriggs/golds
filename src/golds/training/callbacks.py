@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -361,73 +362,99 @@ class VideoProgressCallback(BaseCallback):
         t.start()
 
     def _record_video(self, label: str) -> None:
-        """Actually record the video and send it."""
-        from stable_baselines3.common.vec_env import VecVideoRecorder
+        """Record video in a subprocess to avoid retro's single-emulator limit."""
+        import subprocess
+        import tempfile
 
-        from golds.environments.factory import EnvironmentFactory
-
-        # Create a fresh eval env
-        env = EnvironmentFactory.create_eval_env(
-            game_id=self.game_id, frame_stack=4, seed=0
-        )
-
-        video_name = f"{self.game_id}_{label}"
-        env = VecVideoRecorder(
-            env,
-            str(self._video_dir),
-            record_video_trigger=lambda x: x == 0,
-            video_length=self.video_length,
-            name_prefix=video_name,
-        )
-
-        # Use current model weights
-        model = self.model
-        obs = env.reset()
-
-        for _ in range(self.video_length):
-            action, _ = model.predict(obs, deterministic=True)
-            obs, _, dones, _ = env.step(action)
-            if dones[0]:
-                obs = env.reset()
-
-        env.close()
-
-        # Find the generated mp4
-        import glob
-
-        mp4_files = sorted(
-            glob.glob(str(self._video_dir / f"{video_name}*.mp4")),
-            key=os.path.getmtime,
-            reverse=True,
-        )
-        if not mp4_files:
+        # Save current model weights to a temp file
+        tmp_model = Path(tempfile.mktemp(suffix=".zip"))
+        try:
+            self.model.save(tmp_model)
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"[video] model save failed: {e}")
             return
-
-        mp4_path = mp4_files[0]
 
         # Get current mean reward for caption
         reward_str = ""
         if len(self.model.ep_info_buffer) > 0:
             mean_reward = np.mean([ep["r"] for ep in self.model.ep_info_buffer])
-            reward_str = f"\nMean Reward: {mean_reward:.1f}"
+            reward_str = f"{mean_reward:.1f}"
 
-        if self.verbose > 0:
-            print(f"[video] saved: {mp4_path}")
+        # Spawn subprocess to record + send
+        # Build args to pass cleanly without f-string issues
+        import json
 
-        # Send to Telegram
+        args_json = json.dumps({
+            "game_id": self.game_id,
+            "model_path": str(tmp_model),
+            "video_dir": str(self._video_dir),
+            "label": label,
+            "video_length": self.video_length,
+            "steps": self.num_timesteps,
+            "reward_str": reward_str,
+        })
+
+        script = (
+            "import json, os, glob, sys\n"
+            f"args = json.loads({args_json!r})\n"
+            "from stable_baselines3 import PPO\n"
+            "from stable_baselines3.common.vec_env import VecVideoRecorder\n"
+            "from golds.environments.factory import EnvironmentFactory\n"
+            "video_name = args['game_id'] + '_' + args['label']\n"
+            "env = EnvironmentFactory.create_eval_env(game_id=args['game_id'], frame_stack=4, seed=0)\n"
+            "env = VecVideoRecorder(env, args['video_dir'], "
+            "record_video_trigger=lambda x: x == 0, "
+            "video_length=args['video_length'], name_prefix=video_name)\n"
+            "model = PPO.load(args['model_path'], env=env)\n"
+            "obs = env.reset()\n"
+            "for _ in range(args['video_length']):\n"
+            "    action, _ = model.predict(obs, deterministic=True)\n"
+            "    obs, _, dones, _ = env.step(action)\n"
+            "    if dones[0]:\n"
+            "        obs = env.reset()\n"
+            "env.close()\n"
+            "mp4s = sorted(glob.glob(os.path.join(args['video_dir'], video_name + '*.mp4')), "
+            "key=os.path.getmtime, reverse=True)\n"
+            "if mp4s:\n"
+            "    print(mp4s[0])\n"
+            "    try:\n"
+            "        from golds.notifications.telegram import TelegramNotifier\n"
+            "        n = TelegramNotifier()\n"
+            "        if n.enabled:\n"
+            "            cap = chr(127918) + ' <b>' + args['game_id'] + '</b> ' + chr(8212) + ' ' + args['label'] + chr(10)\n"
+            "            cap += 'Steps: ' + f\"{args['steps']:,}\"\n"
+            "            if args['reward_str']:\n"
+            "                cap += chr(10) + 'Mean Reward: ' + args['reward_str']\n"
+            "            n.send_video(mp4s[0], caption=cap)\n"
+            "    except Exception:\n"
+            "        pass\n"
+        )
+
         try:
-            from golds.notifications.telegram import TelegramNotifier
-
-            notifier = TelegramNotifier()
-            if notifier.enabled:
-                caption = (
-                    f"🎮 <b>{self.game_id}</b> — {label}\n"
-                    f"Steps: {self.num_timesteps:,}"
-                    f"{reward_str}"
-                )
-                notifier.send_video(mp4_path, caption=caption)
-        except Exception:
-            pass  # Best-effort
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                if self.verbose > 0:
+                    print(f"[video] saved: {result.stdout.strip()}")
+            elif result.stderr.strip() and self.verbose > 0:
+                # Only print first line of error
+                print(f"[video] subprocess error: {result.stderr.strip().splitlines()[0]}")
+        except subprocess.TimeoutExpired:
+            if self.verbose > 0:
+                print("[video] recording timed out (120s)")
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"[video] subprocess failed: {e}")
+        finally:
+            try:
+                tmp_model.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 class SelfPlaySnapshotCallback(BaseCallback):
