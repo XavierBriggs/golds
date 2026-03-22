@@ -8,16 +8,25 @@ environment:
   game_id: mega_man_2
   n_envs: 16
   terminal_on_life_loss: false
-  reward_regime: clipped
+  clip_reward: false
+  reward_regime: raw
+  action_set: platformer
+  sticky_action_prob: 0.25
+  x_pos_reward_scale: 0.1
+  death_penalty: -1.0
+  time_penalty: -0.001
 
 ppo:
-  learning_rate: 2.5e-4
-  n_steps: 128
-  ent_coef: 0.001
+  learning_rate: 3e-4
+  n_steps: 512
+  ent_coef: 0.005
   batch_size: 256
+  clip_range: 0.2
+  lr_schedule: linear
+  clip_schedule: linear
 
 training:
-  total_timesteps: 20000000
+  total_timesteps: 100000000
   eval_freq: 100000
   eval_episodes: 5
   save_freq: 500000

@@ -8,16 +8,23 @@ environment:
   game_id: street_fighter_ii
   n_envs: 24
   terminal_on_life_loss: false
-  reward_regime: clipped
   players: 2
   opponent: self_play
   state: null
+  clip_reward: false
+  reward_regime: raw
+  action_set: fighter
+  sticky_action_prob: 0.25
+  max_episode_steps: 10000
 
 ppo:
-  learning_rate: 2.5e-4
-  n_steps: 128
-  ent_coef: 0.001
+  learning_rate: 3e-4
+  n_steps: 512
+  ent_coef: 0.005
   batch_size: 256
+  clip_range: 0.2
+  lr_schedule: linear
+  clip_schedule: linear
 
 training:
   total_timesteps: 30000000

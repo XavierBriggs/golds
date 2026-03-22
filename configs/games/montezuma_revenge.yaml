@@ -12,9 +12,12 @@ environment:
   reward_regime: clipped
 
 ppo:
-  learning_rate: 2.5e-4
-  n_steps: 128
+  learning_rate: 3e-4
+  n_steps: 512
   ent_coef: 0.01
+  clip_range: 0.2
+  lr_schedule: linear
+  clip_schedule: linear
 
 training:
   total_timesteps: 50000000

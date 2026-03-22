@@ -11,15 +11,14 @@ environment:
   reward_regime: clipped
 
 ppo:
-  # Standard DeepMind settings work well for Space Invaders
-  learning_rate: 2.5e-4
-  n_steps: 128
+  learning_rate: 3e-4
+  n_steps: 512
   ent_coef: 0.01
+  clip_range: 0.2
   lr_schedule: linear
   clip_schedule: linear
 
 training:
-  # Round 2 long-form target
   total_timesteps: 30000000
   eval_freq: 100000
   eval_episodes: 10

@@ -11,19 +11,24 @@ environment:
   state: null  # Uses default Level1-1
   clip_reward: false
   reward_regime: raw
+  action_set: platformer
+  sticky_action_prob: 0.25
   x_pos_reward_scale: 0.1
+  death_penalty: -1.0
+  collectible_reward_scale: 0.01
+  time_penalty: -0.001
 
 ppo:
-  learning_rate: 2.5e-4
-  n_steps: 256
+  learning_rate: 3e-4
+  n_steps: 512
   ent_coef: 0.005
   batch_size: 256
+  clip_range: 0.2
   lr_schedule: linear
   clip_schedule: linear
 
 training:
-  # Round 2 long-form target
-  total_timesteps: 50000000
+  total_timesteps: 100000000
   eval_freq: 200000
   eval_episodes: 3
   eval_deterministic: false

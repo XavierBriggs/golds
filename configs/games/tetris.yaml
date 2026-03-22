@@ -11,17 +11,19 @@ environment:
   state: null  # Uses registry default (Level0.TypeA)
   clip_reward: false
   reward_regime: raw
+  action_set: puzzle
+  sticky_action_prob: 0.25
 
 ppo:
-  learning_rate: 2.5e-4
-  n_steps: 128
+  learning_rate: 3e-4
+  n_steps: 512
   ent_coef: 0.001
   batch_size: 256
+  clip_range: 0.2
   lr_schedule: linear
   clip_schedule: linear
 
 training:
-  # Round 2 long-form target
   total_timesteps: 30000000
   eval_freq: 200000
   eval_episodes: 3
