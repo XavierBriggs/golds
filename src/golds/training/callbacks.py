@@ -441,9 +441,11 @@ class VideoProgressCallback(BaseCallback):
             if result.returncode == 0 and result.stdout.strip():
                 if self.verbose > 0:
                     print(f"[video] saved: {result.stdout.strip()}")
-            elif result.stderr.strip() and self.verbose > 0:
-                # Only print first line of error
-                print(f"[video] subprocess error: {result.stderr.strip().splitlines()[0]}")
+            elif result.returncode != 0 and self.verbose > 0:
+                # Show last 5 lines of stderr for debugging
+                lines = result.stderr.strip().splitlines()
+                tail = "\n".join(lines[-5:]) if len(lines) > 5 else result.stderr.strip()
+                print(f"[video] subprocess error:\n{tail}")
         except subprocess.TimeoutExpired:
             if self.verbose > 0:
                 print("[video] recording timed out (120s)")
