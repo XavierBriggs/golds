@@ -164,3 +164,22 @@ class TestV3ConfigFields:
         assert cfg.rnd_enabled is False
         assert cfg.rnd_reward_scale == 0.01
         assert cfg.rnd_learning_rate == 1e-4
+
+
+def test_eval_clip_reward_defaults_none_and_overrides():
+    """eval_clip_reward defaults to None (inherit) and can override clip_reward (R7)."""
+    from golds.config.schema import EnvironmentConfig
+
+    default = EnvironmentConfig(game_id="breakout", platform="atari")
+    assert default.eval_clip_reward is None  # inherit clip_reward
+
+    override = EnvironmentConfig(
+        game_id="breakout", platform="atari", clip_reward=True, eval_clip_reward=False
+    )
+    # resolution logic used by Trainer._create_eval_env
+    resolved = (
+        override.eval_clip_reward
+        if override.eval_clip_reward is not None
+        else override.clip_reward
+    )
+    assert resolved is False

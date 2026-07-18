@@ -40,8 +40,15 @@ ppo:
 training:
   total_timesteps: 100000000
   eval_freq: 200000
-  eval_episodes: 3
-  eval_deterministic: false
+  # R6: fixed from eval_episodes=3 / eval_deterministic=false to the spec'd
+  # 100-episode deterministic eval. Note the tradeoff before an M3 ithaca
+  # run: eval_episodes is also used by the *periodic* in-training eval
+  # (every eval_freq steps), so this makes every periodic eval run 100
+  # sequential episodes in a single-emulator retro env instead of 3 --
+  # meaningfully more wall-clock overhead across ~500 evals in a 100M-step
+  # run. Reduce eval_freq if that overhead is too high in practice.
+  eval_episodes: 100
+  eval_deterministic: true
   save_freq: 500000
   seed: 42
   video_freq: 10000000

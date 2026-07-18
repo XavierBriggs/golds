@@ -39,6 +39,30 @@ def test_human_normalized_score_unknown_game():
     assert result is None
 
 
+def test_human_normalized_score_known_triple():
+    """Hand-computed HNS for a known (agent, human, random) triple.
+
+    Breakout: human=30.5, random=1.7. Halfway agent score of 16.1:
+    HNS = (16.1 - 1.7) / (30.5 - 1.7) = 14.4 / 28.8 = 0.5
+    """
+    score = human_normalized_score("breakout", 16.1)
+    assert score == pytest.approx(0.5)
+
+
+def test_human_normalized_score_divide_by_zero_guard(monkeypatch):
+    """human == random => denominator is zero => must return None, not raise."""
+    from golds.results import baselines as baselines_module
+
+    fake_baselines = dict(baselines_module.BASELINES)
+    fake_baselines["degenerate_game"] = baselines_module.BaselineScores(
+        human=10.0, random=10.0
+    )
+    monkeypatch.setattr(baselines_module, "BASELINES", fake_baselines)
+
+    result = baselines_module.human_normalized_score("degenerate_game", 5.0)
+    assert result is None
+
+
 def test_human_scores_positive():
     """All human scores should be strictly greater than random scores."""
     for game_id, baseline in BASELINES.items():

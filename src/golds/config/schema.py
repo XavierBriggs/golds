@@ -48,6 +48,11 @@ class EnvironmentConfig(BaseModel):
     screen_size: int = Field(default=84, ge=1, description="Screen size after resize")
     grayscale: bool = Field(default=True, description="Convert to grayscale")
     clip_reward: bool = Field(default=True, description="Clip rewards to {-1, 0, 1}")
+    eval_clip_reward: bool | None = Field(
+        default=None,
+        description="Clip rewards during eval. None inherits clip_reward. "
+        "Set false for a raw-score eval comparable to published baselines.",
+    )
     terminal_on_life_loss: bool = Field(
         default=True, description="End episode on life loss (Atari only)"
     )

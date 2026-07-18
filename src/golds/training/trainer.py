@@ -142,7 +142,11 @@ class Trainer:
             opponent_snapshot_dir=opponent_snapshot_dir,
             wrapper_kwargs={
                 "terminal_on_life_loss": False,
-                "clip_reward": env_config.clip_reward,
+                "clip_reward": (
+                    env_config.eval_clip_reward
+                    if env_config.eval_clip_reward is not None
+                    else env_config.clip_reward
+                ),
                 "action_set": env_config.action_set,
                 "sticky_action_prob": 0.0,  # No sticky actions during eval
             },
@@ -331,6 +335,9 @@ class Trainer:
             reward_regime=self.config.environment.reward_regime,
             output_dir=str(self.output_dir),
             resumed_from=str(self.resume_from) if self.resume_from else None,
+            eval_env=eval_env,
+            eval_episodes=self.config.training.eval_episodes,
+            eval_deterministic=self.config.training.eval_deterministic,
             verbose=1,
         )
         callbacks.append(results_callback)

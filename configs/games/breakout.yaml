@@ -9,6 +9,7 @@ environment:
   n_envs: 16
   terminal_on_life_loss: true
   reward_regime: clipped
+  eval_clip_reward: false  # raw-score eval, comparable to published PPO baselines (R7)
 
 ppo:
   learning_rate: 3e-4

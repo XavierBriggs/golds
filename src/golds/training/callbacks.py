@@ -560,6 +560,9 @@ class ResultsCallback(BaseCallback):
         output_dir: str | Path = "",
         results_path: str | Path = "results.json",
         resumed_from: str | None = None,
+        eval_env: VecEnv | None = None,
+        eval_episodes: int = 100,
+        eval_deterministic: bool = True,
         verbose: int = 0,
     ) -> None:
         """Initialize results callback.
@@ -576,6 +579,16 @@ class ResultsCallback(BaseCallback):
             output_dir: Base output directory for model paths.
             results_path: Path to the results JSON file.
             resumed_from: Path to model this run was resumed from.
+            eval_env: Environment to run the formal end-of-training eval on
+                (R7). ``None`` (the default) skips the eval entirely and
+                leaves ``eval_100ep``/``human_normalized_score`` as ``None``
+                -- this keeps the callback backward-compatible with call
+                sites that don't wire an eval env (e.g. eval_freq=0).
+            eval_episodes: Number of episodes for the formal end-of-training
+                eval. Wired to ``TrainingConfig.eval_episodes`` by the
+                trainer; defaults to 100 to match the "100-ep" field name.
+            eval_deterministic: Whether the formal eval uses a deterministic
+                policy. Wired to ``TrainingConfig.eval_deterministic``.
             verbose: Verbosity level.
         """
         super().__init__(verbose)
@@ -590,10 +603,61 @@ class ResultsCallback(BaseCallback):
         self.output_dir = str(output_dir)
         self.results_path = Path(results_path)
         self.resumed_from = resumed_from
+        self.eval_env = eval_env
+        self.eval_episodes = eval_episodes
+        self.eval_deterministic = eval_deterministic
         self._start_time: float | None = None
         self._start_wall_time: datetime | None = None
         self._git_sha: str = "unknown"
         self._git_dirty: bool = False
+
+    def _run_final_eval(self) -> "EvalResult | None":
+        """Run the formal deterministic evaluation that backs eval_100ep (R7).
+
+        Reuses the eval_env wired up by the trainer (the same one driving
+        periodic evaluation during training) and evaluates the *final*
+        trained policy over ``self.eval_episodes`` episodes. This is the
+        "formal baseline" run: its mean is what feeds ``human_normalized_score``,
+        not the running ``best_eval_reward`` (which can come from an earlier,
+        possibly overfit-to-eval-noise checkpoint).
+
+        Never raises: returns ``None`` (logging a warning if verbose) on any
+        failure -- including simply having no eval_env wired up, which is the
+        normal case in unit tests and for call sites with eval_freq=0. Result
+        writing must never crash training.
+        """
+        if self.eval_env is None:
+            return None
+        try:
+            from stable_baselines3.common.evaluation import evaluate_policy
+
+            from golds.results.schema import EvalResult
+
+            episode_rewards, episode_lengths = evaluate_policy(
+                self.model,
+                self.eval_env,
+                n_eval_episodes=self.eval_episodes,
+                deterministic=self.eval_deterministic,
+                return_episode_rewards=True,
+                warn=False,
+            )
+            rewards = np.asarray(episode_rewards, dtype=float)
+            lengths = np.asarray(episode_lengths, dtype=float)
+            return EvalResult(
+                mean_reward=float(rewards.mean()),
+                std_reward=float(rewards.std()),
+                min_reward=float(rewards.min()),
+                max_reward=float(rewards.max()),
+                median_reward=float(np.median(rewards)),
+                mean_length=float(lengths.mean()),
+                std_length=float(lengths.std()),
+                n_episodes=int(len(rewards)),
+                deterministic=self.eval_deterministic,
+            )
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"[warn] final eval failed ({e}); eval_100ep will be None.")
+            return None
 
     def _on_training_start(self) -> None:
         self._start_time = time.monotonic()
@@ -608,6 +672,7 @@ class ResultsCallback(BaseCallback):
         if self._start_time is None:
             return
 
+        from golds.results.baselines import BASELINES, human_normalized_score
         from golds.results.schema import TrainingResult
         from golds.results.store import ResultStore
 
@@ -636,6 +701,25 @@ class ResultsCallback(BaseCallback):
                 except Exception:
                     pass
 
+        # R7: formal end-of-training eval + human-normalized baseline.
+        # The agent score used for human_normalized_score is the eval_100ep
+        # mean (the formal, final-policy, deterministic baseline) -- not
+        # best_eval_reward -- per R7's "formal baseline = the 100-ep
+        # deterministic mean" intent. best_eval_reward can reflect an
+        # earlier checkpoint and/or eval-noise peak, which isn't what a
+        # published human-normalized score should be built on.
+        eval_100ep = self._run_final_eval()
+        agent_score = eval_100ep.mean_reward if eval_100ep is not None else None
+
+        baseline = BASELINES.get(self.game_id)
+        human_score = baseline.human if baseline is not None else None
+        published_ppo_score = baseline.ppo if baseline is not None else None
+        hns = (
+            human_normalized_score(self.game_id, agent_score)
+            if agent_score is not None
+            else None
+        )
+
         result = TrainingResult(
             game_id=self.game_id,
             experiment_name=self.experiment_name,
@@ -645,6 +729,10 @@ class ResultsCallback(BaseCallback):
             total_timesteps_target=self.total_timesteps_target,
             wall_time_seconds=wall_time,
             best_eval_reward=best_eval_reward,
+            eval_100ep=eval_100ep,
+            human_score=human_score,
+            human_normalized_score=hns,
+            published_ppo_score=published_ppo_score,
             device=self.device,
             n_envs=self.n_envs,
             started_at=self._start_wall_time or datetime.now(),
