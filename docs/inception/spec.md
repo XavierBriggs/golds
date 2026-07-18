@@ -3,7 +3,7 @@
 
 Date: 2026-07-18
 Status: LIVING. This spec is expected to change. See Living spec below.
-Last re-sync: not yet, pre-M1
+Last re-sync: 2026-07-18, after M1a (walking skeleton verified on ithaca)
 
 ## Problem
 
@@ -65,7 +65,9 @@ Things only Xavier can do; build sessions cannot. Must exist before the mileston
 - Sonic Genesis ROM imported on ithaca (`golds rom import`). Not redistributable; not in the repo. (Needed for M2 retro probe and M3; R3-R5 unit tests do NOT need it.)
 - ithaca reachable: Tailscale VPN up, `xbriggs` creds working. Documented in the repo CLAUDE.md.
 
-### M1a: Walking skeleton (fully local, zero external deps)
+### M1a: Walking skeleton (fully local, zero external deps) [DONE 2026-07-18]
+
+Verified end to end on ithaca: 50k Breakout run wrote a results.json row with distinct started_at/completed_at, real git_sha (d883df4), git_dirty=True, and `golds diagnose breakout` returned HEALTHY (best_eval_reward=2.2). Code committed d883df4, 113 tests green.
 
 The thinnest slice that actually runs end to end with no SaaS and no human verification: fix the results.json timestamp bug, add git provenance capture (R12), run a short Breakout run on ithaca that writes a valid results.json row (correct timestamps, config hash, git_sha, git_dirty), and have `golds diagnose` read that row and return a health verdict. Every done-condition is machine-checkable locally. Uses Breakout (already validated) so M1a tests plumbing, not RL outcome. This is the walking skeleton: real training path + real results store + real diagnose, no credentials.
 
@@ -138,6 +140,7 @@ Re-sync ritual, run at the end of every milestone before starting the next:
 
 | Date | What diverged | Accepted because |
 |---|---|---|
+| 2026-07-18 | ithaca's repo working tree was dirty during the M1a run (git_dirty=True). | Accepted for the skeleton (it validated the flag working). Ops item: clean or explain ithaca's working tree before M2/M3 real runs, since the "trusted result = reproducible from git SHA" principle needs git_dirty=False for a baseline to count. |
 
 ## Red team
 
