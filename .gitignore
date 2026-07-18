@@ -102,3 +102,6 @@ desktop.ini
 # Secrets
 secrets/
 credentials/
+
+# W&B local run cache (streamed to cloud; not source)
+wandb/
