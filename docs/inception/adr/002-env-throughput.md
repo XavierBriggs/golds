@@ -10,6 +10,8 @@ The probe measured 177 aggregate timesteps/sec on Atari with n_envs=16 and GPU u
 
 Update 2026-07-18 (M1b re-sync): the 177 steps/sec that motivated this ADR was wall-clock-contaminated. A clean short Breakout run measured ~2200 steps/sec on the same Atari config, meaning the probe's low figure came from ithaca suspending mid-run, not slow stepping. Atari throughput is therefore healthy. This weakens the premise that throughput is the top risk. Retro still needs its own measurement (R1) because Genesis stepping is heavier, but the likely lift is small, and the real ops fix is disabling ithaca sleep (now an M0 precondition), not env parallelism.
 
+Update 2026-07-18 (M2 re-sync, DECIDING): retro measured. A Sonic run at n_envs=24 clocked ~2000 steps/sec (grade A), essentially on par with Atari's ~2200. There is NO retro throughput deficit. This ADR's premise is fully dissolved: the only action this ADR now motivates is disabling ithaca sleep. No env-parallelism engineering is needed. A 20-50M Sonic run is ~3-7 GPU-hours, not the days the contaminated number implied.
+
 ## Options
 
 - Keep the invented 400/40 percent target: grade-E numbers dressed as a hard gate; the Atari-to-retro extrapolation runs the wrong direction. Rejected.

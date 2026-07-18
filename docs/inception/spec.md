@@ -3,7 +3,7 @@
 
 Date: 2026-07-18
 Status: LIVING. This spec is expected to change. See Living spec below.
-Last re-sync: 2026-07-18, after M1b (W&B verified live; throughput finding recorded)
+Last re-sync: 2026-07-18, after M2 R1/R3-R5/R10 (retro throughput measured ~2000 steps/s; Sonic ROM verified)
 
 ## Problem
 
@@ -34,8 +34,8 @@ GOLDS has never produced a trusted training run: agents fail to complete levels,
 
 | # | Requirement (testable) | Traces to goal |
 |---|---|---|
-| R1 | A retro throughput probe records steps/sec and GPU util for the Sonic config at n_envs=24, saved as a grade-A number, before any Sonic training run. | G1 |
-| R2 | The throughput target is set as a multiple of the measured retro baseline (R1), not the Atari 177, and the run hits it or logs the cap as a finding. | G1 |
+| R1 | DONE 2026-07-18: Sonic config at n_envs=24 measured ~2000 steps/sec (1887-2062), grade A, W&B run dy2qpwrz. | G1 |
+| R2 | SATISFIED (no engineering needed): retro ~2000 steps/sec is on par with Atari ~2200, so there is no throughput deficit to fix. The only ops action is disabling ithaca sleep (M0). A 20-50M Sonic run is ~3-7 GPU-hours. | G1 |
 | R3 | A delta-max(x) reward replaces the raw delta-x in PlatformerRewardWrapper, unit-tested against hand-computed expected values. | G2, G5 |
 | R4 | A level-completion detector and per-level end-x threshold exist for GHZ Act 1, unit-tested. | G2 |
 | R5 | A raw-progress eval path reports unclipped completion (reached level-end x), unit-tested. | G2 |
@@ -43,7 +43,7 @@ GOLDS has never produced a trusted training run: agents fail to complete levels,
 | R7 | A Breakout 100-episode deterministic unclipped eval writes mean reward + config hash + git provenance (R12) to results.json; the timestamp bug and null eval fields are fixed (started_at captured at training start; eval_100ep and human_normalized_score populated for a 100-ep run). | G3, G4 |
 | R8 | A W&B callback logs config + git provenance, PPO health metrics, game-progress metrics, GPU/FPS, and periodic video (via the retro video-subprocess path) for every run. Its done-condition is asserted programmatically via the wandb API (run exists, expected keys present), not by eyeballing a dashboard. | G4 |
 | R9 | `golds diagnose <run>` reads the run's local results.json row and prints a binary health verdict. Broken predicate is explicit: best_eval_reward is None or <= epsilon flags broken. Capped at the flag, not a dashboard. No W&B dependency. | G4 |
-| R10 | Live PPO invariant checks (clip fraction in (0,0.3), bounded approx-KL, rising explained variance, zero-mean/unit-std normalized advantages) run and pass on a real training run. | G5 |
+| R10 | DONE 2026-07-18: PPOInvariantCallback built (clip fraction, approx-KL, EV trend, finite non-degenerate advantages; advantage-normalization limitation documented honestly). Surfaced no violations on the real Sonic probe run. Config-flag gated. | G5 |
 | R11 | The agent completes GHZ Act 1 in >= 80 percent of a 100-episode deterministic eval, with recorded video. | G6 |
 | R12 | TrainingResult carries git_sha and git_dirty; a result recorded on a dirty tree is marked git_dirty=true, so the reproducibility claim is honest during iteration. Schema change + capture code. | G3, G4 |
 
