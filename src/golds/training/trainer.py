@@ -22,6 +22,7 @@ from golds.training.callbacks import (
     VideoProgressCallback,
     create_eval_callback,
 )
+from golds.training.wandb_callback import WandbCallback
 from golds.utils.device import get_device
 
 console = Console()
@@ -275,6 +276,22 @@ class Trainer:
                 verbose=1,
             )
             callbacks.append(video_callback)
+
+        # W&B observability callback (M1b/T5, R8). Gated behind
+        # experiment.wandb.enabled (default false) so existing runs and
+        # tests are unaffected. Never crashes training if W&B is
+        # unreachable/unauthenticated; see WandbCallback docstring.
+        if self.config.wandb.enabled:
+            callbacks.append(
+                WandbCallback(
+                    experiment_config=self.config,
+                    project=self.config.wandb.project,
+                    entity=self.config.wandb.entity,
+                    mode=self.config.wandb.mode,
+                    tags=self.config.wandb.tags,
+                    verbose=1,
+                )
+            )
 
         # Results tracking callback
         results_callback = ResultsCallback(

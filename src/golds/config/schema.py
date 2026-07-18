@@ -178,6 +178,31 @@ class TrainingConfig(BaseModel):
     )
 
 
+class WandbConfig(BaseModel):
+    """Weights & Biases observability configuration (M1b/T5, R8).
+
+    Disabled by default so existing runs and tests are unaffected. When
+    enabled, ``WandbCallback`` logs the full experiment config plus git
+    provenance, PPO health metrics, and system stats. It never crashes
+    training if W&B is unreachable, unauthenticated, or the package is
+    missing (see ``golds.training.wandb_callback``). Video logging is
+    deferred to M3 (needs the retro video-subprocess path).
+    """
+
+    enabled: bool = Field(
+        default=False, description="Enable the W&B observability callback for this run."
+    )
+    project: str = Field(default="golds", description="W&B project name.")
+    entity: str | None = Field(
+        default=None, description="W&B entity (team/user). None uses the W&B default."
+    )
+    mode: Literal["online", "offline", "disabled"] | None = Field(
+        default=None,
+        description="W&B run mode override. None defers to the WANDB_MODE env var / W&B default.",
+    )
+    tags: list[str] = Field(default_factory=list, description="Tags to attach to the W&B run.")
+
+
 class ExperimentConfig(BaseModel):
     """Full experiment configuration."""
 
@@ -187,6 +212,9 @@ class ExperimentConfig(BaseModel):
     ppo: PPOConfig = Field(default_factory=PPOConfig, description="PPO hyperparameters")
     training: TrainingConfig = Field(
         default_factory=TrainingConfig, description="Training configuration"
+    )
+    wandb: WandbConfig = Field(
+        default_factory=WandbConfig, description="W&B observability configuration."
     )
     round: int = Field(default=1, ge=1, description="Training round number")
     version: str = Field(default="", description="Free-form version tag")

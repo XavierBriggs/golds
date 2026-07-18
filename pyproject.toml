@@ -33,6 +33,7 @@ dependencies = [
     "opencv-python>=4.8.0",
     "moviepy>=2.2.1",
     "python-dotenv>=1.2.2",
+    "wandb>=0.28.1",
 ]
 
 [project.optional-dependencies]
