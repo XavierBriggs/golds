@@ -153,6 +153,10 @@ def make_retro_env(
     death_penalty: float = 0.0,
     collectible_reward_scale: float = 0.0,
     time_penalty: float = 0.0,
+    progress_mode: str = "delta_x",
+    level_end_x: float | None = None,
+    completion_bonus: float = 0.0,
+    level_end_info_key: str | None = None,
 ) -> gym.Env:
     """Create a single retro environment with preprocessing.
 
@@ -204,6 +208,8 @@ def make_retro_env(
         or death_penalty != 0
         or collectible_reward_scale > 0
         or time_penalty != 0
+        or level_end_x is not None
+        or level_end_info_key is not None
     )
     if has_shaping:
         from golds.environments.retro.wrappers import PlatformerRewardWrapper
@@ -215,6 +221,10 @@ def make_retro_env(
             death_penalty=death_penalty,
             collectible_reward_scale=collectible_reward_scale,
             time_penalty=time_penalty,
+            progress_mode=progress_mode,
+            level_end_x=level_end_x,
+            completion_bonus=completion_bonus,
+            level_end_info_key=level_end_info_key,
         )
 
     # 5. Time limit for fighting games
@@ -286,6 +296,10 @@ def make_retro_vec_env(
         "death_penalty": 0.0,
         "collectible_reward_scale": 0.0,
         "time_penalty": 0.0,
+        "progress_mode": "delta_x",
+        "level_end_x": None,
+        "completion_bonus": 0.0,
+        "level_end_info_key": None,
     }
 
     if wrapper_kwargs:
@@ -304,6 +318,10 @@ def make_retro_vec_env(
             "death_penalty",
             "collectible_reward_scale",
             "time_penalty",
+            "progress_mode",
+            "level_end_x",
+            "completion_bonus",
+            "level_end_info_key",
         }
         filtered = {k: v for k, v in wrapper_kwargs.items() if k in allowed}
         default_kwargs.update(filtered)

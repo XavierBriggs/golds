@@ -112,6 +112,35 @@ class EnvironmentConfig(BaseModel):
         le=0,
         description="Per-step penalty to encourage speed (should be negative or 0).",
     )
+    progress_mode: Literal["delta_x", "delta_max_x"] = Field(
+        default="delta_x",
+        description=(
+            "X-position reward shaping mode. 'delta_x' (default) rewards raw "
+            "per-step movement and punishes backtracking; 'delta_max_x' rewards "
+            "only new furthest-right progress (the standard Sonic recipe, "
+            "ADR-004) and never punishes backtracking."
+        ),
+    )
+    level_end_x: float | None = Field(
+        default=None,
+        description=(
+            "Per-level x-position threshold for completion detection. None "
+            "disables threshold-based completion (placeholder until the value "
+            "is known from ROM data, e.g. GHZ Act 1)."
+        ),
+    )
+    completion_bonus: float = Field(
+        default=0.0,
+        ge=0,
+        description="One-time bonus reward awarded when level completion is first detected.",
+    )
+    level_end_info_key: str | None = Field(
+        default=None,
+        description=(
+            "Optional retro info dict key that signals level completion when "
+            "truthy (e.g. a level/act-change flag). None disables this signal."
+        ),
+    )
 
 
 class TrainingConfig(BaseModel):

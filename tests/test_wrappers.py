@@ -470,6 +470,273 @@ class TestPlatformerRewardWrapperExtended:
 
 
 # ---------------------------------------------------------------------------
+# PlatformerRewardWrapper: progress_mode="delta_max_x" (ADR-004 / R3)
+# ---------------------------------------------------------------------------
+
+
+class TestPlatformerRewardWrapperDeltaMaxX:
+    def test_backward_compat_default_is_delta_x(self):
+        """progress_mode defaults to 'delta_x' so other games keep old behavior."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 100}, {"x": 90}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos), scale=0.1, game="SonicTheHedgehog-Genesis"
+        )
+        assert env.progress_mode == "delta_x"
+        env.reset()
+        _, reward, _, _, _ = env.step(0)
+        # Old behavior: raw(1.0) + scale*(90-100) = 1.0 - 1.0 = 0.0
+        assert reward == pytest.approx(0.0)
+
+    def test_delta_x_mode_explicit_matches_old_behavior(self):
+        """Explicitly requesting delta_x still punishes backtracking (unchanged)."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 10}, {"x": 25}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.1,
+            game="SonicTheHedgehog-Genesis",
+            progress_mode="delta_x",
+        )
+        env.reset()
+        _, reward1, _, _, _ = env.step(0)
+        assert reward1 == pytest.approx(2.0)
+        _, reward2, _, _, _ = env.step(0)
+        assert reward2 == pytest.approx(2.5)
+
+    def test_delta_max_x_rewards_only_new_forward_progress(self):
+        """Forward, then backward, then forward past the old max.
+
+        x sequence: 0 -> 10 -> 25 -> 15 -> 5 -> 30 (reset -> steps 1..5)
+        scale=0.1, raw reward is always 1.0 (per _FakeRetroEnv).
+
+        step1: x=10, progress=max(0,10-0)=10  -> shaped=1.0 -> reward=2.0, max_x=10
+        step2: x=25, progress=max(0,25-10)=15 -> shaped=1.5 -> reward=2.5, max_x=25
+        step3: x=15 (backtrack), progress=max(0,15-25)=0 -> shaped=0.0 -> reward=1.0, max_x=25
+        step4: x=5  (further back), progress=max(0,5-25)=0 -> shaped=0.0 -> reward=1.0, max_x=25
+        step5: x=30 (new max, re-covers + exceeds), progress=max(0,30-25)=5 -> shaped=0.5 -> reward=1.5, max_x=30
+        """
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 10}, {"x": 25}, {"x": 15}, {"x": 5}, {"x": 30}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.1,
+            game="SonicTheHedgehog-Genesis",
+            progress_mode="delta_max_x",
+        )
+        env.reset()
+
+        _, reward1, _, _, info1 = env.step(0)
+        assert reward1 == pytest.approx(2.0)
+        assert info1["shaped_x_progress"] == pytest.approx(1.0)
+
+        _, reward2, _, _, info2 = env.step(0)
+        assert reward2 == pytest.approx(2.5)
+        assert info2["shaped_x_progress"] == pytest.approx(1.5)
+
+        _, reward3, _, _, info3 = env.step(0)
+        assert reward3 == pytest.approx(1.0)
+        assert info3["shaped_x_progress"] == pytest.approx(0.0)
+
+        _, reward4, _, _, info4 = env.step(0)
+        assert reward4 == pytest.approx(1.0)
+        assert info4["shaped_x_progress"] == pytest.approx(0.0)
+
+        _, reward5, _, _, info5 = env.step(0)
+        assert reward5 == pytest.approx(1.5)
+        assert info5["shaped_x_progress"] == pytest.approx(0.5)
+
+        progress = env.get_episode_progress()
+        assert progress["max_x"] == pytest.approx(30.0)
+
+    def test_delta_max_x_resets_max_on_episode_reset(self):
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 50}, {"x": 80}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.1,
+            game="SonicTheHedgehog-Genesis",
+            progress_mode="delta_max_x",
+        )
+        env.reset()
+        env.step(0)
+        assert env.get_episode_progress()["max_x"] == pytest.approx(80.0)
+
+        env.reset()
+        assert env.get_episode_progress()["max_x"] == pytest.approx(50.0)
+
+    def test_invalid_progress_mode_raises(self):
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        with pytest.raises(ValueError, match="progress_mode"):
+            PlatformerRewardWrapper(
+                _FakeRetroEnv(), game="SonicTheHedgehog-Genesis", progress_mode="bogus"
+            )
+
+
+# ---------------------------------------------------------------------------
+# PlatformerRewardWrapper: completion detector (ADR-004 / R4)
+# ---------------------------------------------------------------------------
+
+
+class TestPlatformerRewardWrapperCompletion:
+    def test_threshold_completion_emits_bonus_once(self):
+        """x crossing level_end_x emits the completion bonus exactly once."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 50}, {"x": 100}, {"x": 150}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            level_end_x=100.0,
+            completion_bonus=50.0,
+        )
+        env.reset()
+
+        _, _, _, _, info1 = env.step(0)  # x=50, below threshold
+        assert info1["shaped_completion_bonus"] == pytest.approx(0.0)
+        assert info1["level_complete"] is False
+
+        _, _, _, _, info2 = env.step(0)  # x=100, crosses threshold
+        assert info2["shaped_completion_bonus"] == pytest.approx(50.0)
+        assert info2["level_complete"] is True
+
+        _, _, _, _, info3 = env.step(0)  # x=150, still complete, bonus not repeated
+        assert info3["shaped_completion_bonus"] == pytest.approx(0.0)
+        assert info3["level_complete"] is True
+
+        progress = env.get_episode_progress()
+        assert progress["completed"] is True
+        assert progress["max_x"] == pytest.approx(150.0)
+        assert progress["level_end_x"] == pytest.approx(100.0)
+
+    def test_below_threshold_never_completes(self):
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 10}, {"x": 40}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            level_end_x=100.0,
+            completion_bonus=50.0,
+        )
+        env.reset()
+        for _ in range(len(infos) - 1):
+            _, _, _, _, info = env.step(0)
+            assert info["shaped_completion_bonus"] == pytest.approx(0.0)
+            assert info["level_complete"] is False
+
+        progress = env.get_episode_progress()
+        assert progress["completed"] is False
+        assert progress["max_x"] == pytest.approx(40.0)
+
+    def test_none_threshold_disables_threshold_completion(self):
+        """level_end_x=None (the default) means completion-by-threshold is disabled."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 999999.0}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            completion_bonus=50.0,
+        )
+        assert env.level_end_x is None
+        env.reset()
+        _, _, _, _, info = env.step(0)
+        assert info["shaped_completion_bonus"] == pytest.approx(0.0)
+        assert info["level_complete"] is False
+
+        progress = env.get_episode_progress()
+        assert progress["completed"] is False
+        assert progress["level_end_x"] is None
+
+    def test_completion_via_info_key_signal(self):
+        """An optional info-dict key can also signal completion (e.g. act change)."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [
+            {"x": 0, "level_end_bonus": 0},
+            {"x": 10, "level_end_bonus": 0},
+            {"x": 20, "level_end_bonus": 0},
+            {"x": 30, "level_end_bonus": 1},
+        ]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            level_end_info_key="level_end_bonus",
+            completion_bonus=25.0,
+        )
+        env.reset()
+
+        _, _, _, _, info1 = env.step(0)
+        assert info1["level_complete"] is False
+
+        _, _, _, _, info2 = env.step(0)
+        assert info2["level_complete"] is False
+
+        _, _, _, _, info3 = env.step(0)
+        assert info3["shaped_completion_bonus"] == pytest.approx(25.0)
+        assert info3["level_complete"] is True
+
+        assert env.get_episode_progress()["completed"] is True
+
+
+# ---------------------------------------------------------------------------
+# PlatformerRewardWrapper: get_episode_progress (ADR-004 / R5)
+# ---------------------------------------------------------------------------
+
+
+class TestPlatformerRewardWrapperEpisodeProgress:
+    def test_progress_shape_before_any_step(self):
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 7}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            game="SonicTheHedgehog-Genesis",
+            level_end_x=1000.0,
+        )
+        env.reset()
+        progress = env.get_episode_progress()
+        assert progress == {"completed": False, "max_x": pytest.approx(7.0), "level_end_x": pytest.approx(1000.0)}
+
+    def test_progress_reflects_completion_rate_across_episodes(self):
+        """Simulates what an eval loop would do: query progress per episode."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        # Episode 1: reaches the end. Episode 2: falls short.
+        infos = [{"x": 0}, {"x": 100}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            game="SonicTheHedgehog-Genesis",
+            level_end_x=100.0,
+        )
+
+        env.reset()
+        env.step(0)
+        episode1 = env.get_episode_progress()
+        assert episode1["completed"] is True
+        assert episode1["max_x"] == pytest.approx(100.0)
+
+        # New episode starts short of the threshold.
+        env2_infos = [{"x": 0}, {"x": 40}]
+        env.env = _FakeRetroEnv(env2_infos)
+        env.reset()
+        env.step(0)
+        episode2 = env.get_episode_progress()
+        assert episode2["completed"] is False
+        assert episode2["max_x"] == pytest.approx(40.0)
+
+
+# ---------------------------------------------------------------------------
 # TimeLimitWrapper tests
 # ---------------------------------------------------------------------------
 

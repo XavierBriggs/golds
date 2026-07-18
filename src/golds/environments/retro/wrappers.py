@@ -132,14 +132,42 @@ class MultiLevelWrapper(gym.Wrapper):
         return self.env.reset(**kwargs)
 
 
+_PROGRESS_MODES = ("delta_x", "delta_max_x")
+
+
 class PlatformerRewardWrapper(gym.Wrapper):
     """Potential-based reward shaping with multiple signals.
 
     Signals (all optional, controlled by constructor args):
-    - X-position progress: ``scale * (x_new - x_old)``
+    - X-position progress: either raw delta-x or delta-max(x), see ``progress_mode``
     - Death penalty: applied on ``terminated=True`` (not truncation)
     - Collectible bonus: delta in rings/coins from info dict
     - Time penalty: small per-step negative reward
+    - Completion bonus: one-time reward when level completion is first detected
+
+    ``progress_mode`` controls the X-position term:
+    - ``"delta_x"`` (default, backward compatible): ``scale * (x_new - x_old)``.
+      Punishes backtracking. This is the pre-ADR-004 behavior, kept as the
+      default so other retro platformer configs are unaffected.
+    - ``"delta_max_x"``: ``scale * max(0.0, x_new - max_x_so_far)``. Only NEW
+      furthest-right progress is rewarded; backtracking is never punished and
+      re-covering old ground earns nothing. This is the standard Sonic recipe
+      (ADR-004 / R3): it fixes the failure mode where the agent gets stuck and
+      needs to backtrack past a trap.
+
+    Level completion (ADR-004 / R4) is detected when EITHER:
+    - ``x_new >= level_end_x`` (a configurable per-level threshold), or
+    - ``info.get(level_end_info_key)`` is truthy, if ``level_end_info_key`` is set
+      (e.g. a level/act-change flag, if stable-retro's data.json exposes one).
+
+    ``level_end_x`` defaults to ``None``, meaning threshold-based completion is
+    DISABLED, so nothing silently reports false completion. Sonic x-position
+    can be large (and can in principle loop/wrap within a level), so this
+    threshold must be set from real ROM data once available (see ADR-004
+    consequences) rather than guessed.
+
+    ``completion_bonus`` is awarded exactly once, the first step completion is
+    detected in an episode.
 
     Uses info dict keys from stable-retro's data.json.
     """
@@ -163,14 +191,31 @@ class PlatformerRewardWrapper(gym.Wrapper):
         death_penalty: float = 0.0,
         collectible_reward_scale: float = 0.0,
         time_penalty: float = 0.0,
+        progress_mode: str = "delta_x",
+        level_end_x: float | None = None,
+        completion_bonus: float = 0.0,
+        level_end_info_key: str | None = None,
     ) -> None:
         super().__init__(env)
+        if progress_mode not in _PROGRESS_MODES:
+            raise ValueError(
+                f"Unknown progress_mode: {progress_mode!r}. Choose from {_PROGRESS_MODES}"
+            )
         self.scale = scale
         self.death_penalty = death_penalty
         self.collectible_reward_scale = collectible_reward_scale
         self.time_penalty = time_penalty
+        self.progress_mode = progress_mode
+        # NOTE: the exact GHZ Act 1 end-x value is unknown until the ROM is
+        # available on ithaca (see docs/inception/spec.md M0). None means
+        # threshold-based completion is disabled; do not guess this value.
+        self.level_end_x = level_end_x
+        self.completion_bonus = completion_bonus
+        self.level_end_info_key = level_end_info_key
         self._x_old: float = 0.0
+        self._max_x: float = 0.0
         self._collectible_old: float = 0.0
+        self._completed: bool = False
         self._extractor = self._resolve_extractor(game)
         self._collectible_extractor = self._resolve_collectible_extractor(game)
 
@@ -193,8 +238,12 @@ class PlatformerRewardWrapper(gym.Wrapper):
 
         # X-position shaping
         x_new = float(self._extractor(info))
-        x_shaped = self.scale * (x_new - self._x_old)
+        if self.progress_mode == "delta_max_x":
+            x_shaped = self.scale * max(0.0, x_new - self._max_x)
+        else:  # "delta_x" (default, backward compatible)
+            x_shaped = self.scale * (x_new - self._x_old)
         self._x_old = x_new
+        self._max_x = max(self._max_x, x_new)
 
         # Death penalty (only on true termination, not truncation)
         death = self.death_penalty if terminated and not truncated else 0.0
@@ -208,7 +257,18 @@ class PlatformerRewardWrapper(gym.Wrapper):
         # Time penalty
         time_shaped = self.time_penalty
 
-        total_shaped = x_shaped + death + collect_shaped + time_shaped
+        # Level completion (R4): threshold OR info-key signal, one-time bonus.
+        completion_shaped = 0.0
+        if not self._completed:
+            threshold_hit = self.level_end_x is not None and x_new >= self.level_end_x
+            info_key_hit = self.level_end_info_key is not None and bool(
+                info.get(self.level_end_info_key)
+            )
+            if threshold_hit or info_key_hit:
+                self._completed = True
+                completion_shaped = self.completion_bonus
+
+        total_shaped = x_shaped + death + collect_shaped + time_shaped + completion_shaped
 
         info["raw_reward"] = reward
         info["shaped_reward"] = total_shaped
@@ -216,14 +276,38 @@ class PlatformerRewardWrapper(gym.Wrapper):
         info["shaped_death"] = death
         info["shaped_collectible"] = collect_shaped
         info["shaped_time"] = time_shaped
+        info["shaped_completion_bonus"] = completion_shaped
+        info["level_complete"] = self._completed
 
         return obs, reward + total_shaped, terminated, truncated, info
 
     def reset(self, **kwargs) -> tuple:
         obs, info = self.env.reset(**kwargs)
         self._x_old = float(self._extractor(info))
+        self._max_x = self._x_old
         self._collectible_old = float(self._collectible_extractor(info))
+        self._completed = False
         return obs, info
+
+    def get_episode_progress(self) -> dict[str, Any]:
+        """Return unclipped, raw episode progress (R5).
+
+        Queryable after (or during) an episode so an eval loop can compute a
+        completion RATE over N episodes without depending on clipped/shaped
+        reward. Reset to a fresh state on every ``reset()``.
+
+        Returns:
+            dict with keys:
+            - ``completed``: bool, whether level completion was detected this episode.
+            - ``max_x``: float, the furthest-right raw x-position reached this episode.
+            - ``level_end_x``: float | None, the configured completion threshold
+              (None if threshold-based completion is disabled).
+        """
+        return {
+            "completed": self._completed,
+            "max_x": self._max_x,
+            "level_end_x": self.level_end_x,
+        }
 
 
 class TimeLimitWrapper(gym.Wrapper):
