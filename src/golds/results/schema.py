@@ -37,6 +37,14 @@ class TrainingResult(BaseModel):
     experiment_name: str = Field(description="Human-readable experiment name.")
     config_hash: str = Field(description="Hash of the training configuration for dedup.")
     round: int = Field(default=1, description="Training round number (for multi-round runs).")
+    git_sha: str = Field(
+        default="unknown",
+        description="Git commit SHA at run time ('unknown' if not run inside a git repo).",
+    )
+    git_dirty: bool = Field(
+        default=False,
+        description="Whether the working tree had uncommitted changes at run time.",
+    )
 
     # Training metrics
     total_timesteps_completed: int = Field(description="Actual timesteps completed.")

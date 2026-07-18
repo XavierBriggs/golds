@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from golds import __version__
+from golds.cli.diagnose import diagnose
 from golds.cli.evaluate import eval_app
 from golds.cli.results import results_app
 from golds.cli.roms import rom_app
@@ -35,6 +36,7 @@ app.command("go")(go)
 app.command("train-all")(train_all)
 app.command("setup")(setup)
 app.command("status")(status)
+app.command("diagnose")(diagnose)
 
 
 @app.command("list-games")

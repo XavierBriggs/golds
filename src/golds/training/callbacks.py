@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,8 @@ import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import VecEnv, VecMonitor, is_vecenv_wrapped
+
+from golds.utils.git_info import get_git_provenance
 
 
 class SaveOnBestTrainingRewardCallback(BaseCallback):
@@ -588,9 +591,14 @@ class ResultsCallback(BaseCallback):
         self.results_path = Path(results_path)
         self.resumed_from = resumed_from
         self._start_time: float | None = None
+        self._start_wall_time: datetime | None = None
+        self._git_sha: str = "unknown"
+        self._git_dirty: bool = False
 
     def _on_training_start(self) -> None:
         self._start_time = time.monotonic()
+        self._start_wall_time = datetime.now()
+        self._git_sha, self._git_dirty = get_git_provenance()
 
     def _on_step(self) -> bool:
         return True
@@ -599,8 +607,6 @@ class ResultsCallback(BaseCallback):
         """Assemble and save TrainingResult."""
         if self._start_time is None:
             return
-
-        from datetime import datetime
 
         from golds.results.schema import TrainingResult
         from golds.results.store import ResultStore
@@ -641,8 +647,10 @@ class ResultsCallback(BaseCallback):
             best_eval_reward=best_eval_reward,
             device=self.device,
             n_envs=self.n_envs,
-            started_at=datetime.now(),
+            started_at=self._start_wall_time or datetime.now(),
             completed_at=datetime.now(),
+            git_sha=self._git_sha,
+            git_dirty=self._git_dirty,
             exit_code=0,
             resumed_from=self.resumed_from,
             reward_regime=self.reward_regime,
