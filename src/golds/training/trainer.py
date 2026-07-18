@@ -22,6 +22,7 @@ from golds.training.callbacks import (
     VideoProgressCallback,
     create_eval_callback,
 )
+from golds.training.invariant_callback import PPOInvariantCallback
 from golds.training.wandb_callback import WandbCallback
 from golds.utils.device import get_device
 
@@ -293,6 +294,27 @@ class Trainer:
                     entity=self.config.wandb.entity,
                     mode=self.config.wandb.mode,
                     tags=self.config.wandb.tags,
+                    verbose=1,
+                )
+            )
+
+        # Live PPO invariant-check callback (R10, G5). Gated behind
+        # experiment.invariant_checks.enabled (default false) so existing
+        # runs and tests are unaffected. Diagnostic by default (logs +
+        # records violations; does not crash training) -- see
+        # PPOInvariantCallback docstring for the strict-mode escape hatch.
+        if self.config.invariant_checks.enabled:
+            ic = self.config.invariant_checks
+            callbacks.append(
+                PPOInvariantCallback(
+                    clip_fraction_min=ic.clip_fraction_min,
+                    clip_fraction_max=ic.clip_fraction_max,
+                    approx_kl_max=ic.approx_kl_max,
+                    explained_variance_window=ic.explained_variance_window,
+                    explained_variance_drop=ic.explained_variance_drop,
+                    explained_variance_grace_updates=ic.explained_variance_grace_updates,
+                    advantage_std_min=ic.advantage_std_min,
+                    strict=ic.strict,
                     verbose=1,
                 )
             )

@@ -232,6 +232,55 @@ class WandbConfig(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Tags to attach to the W&B run.")
 
 
+class InvariantChecksConfig(BaseModel):
+    """Live PPO training-health invariant-check configuration (R10, G5).
+
+    Disabled by default so existing runs and tests are unaffected. When
+    enabled, ``PPOInvariantCallback`` checks clip_fraction, approx_kl,
+    explained_variance trend, and rollout-buffer advantage health at the
+    end of every rollout, so a bad run is caught within a few rollouts
+    instead of hours later. Diagnostic by default (violations are logged
+    and recorded, not fatal); see ``golds.training.invariant_callback``.
+    """
+
+    enabled: bool = Field(
+        default=False, description="Enable the PPO invariant-check callback for this run."
+    )
+    clip_fraction_min: float = Field(
+        default=0.0, description="Exclusive lower bound for a healthy clip_fraction."
+    )
+    clip_fraction_max: float = Field(
+        default=0.3, description="Exclusive upper bound for a healthy clip_fraction."
+    )
+    approx_kl_max: float = Field(
+        default=0.05, description="Ceiling for approx_kl; at/above this is a violation."
+    )
+    explained_variance_window: int = Field(
+        default=5,
+        ge=2,
+        description="Rolling window size (updates) for the explained_variance trend check.",
+    )
+    explained_variance_drop: float = Field(
+        default=0.3,
+        description="How far below the rolling mean explained_variance may drop before flagging.",
+    )
+    explained_variance_grace_updates: int = Field(
+        default=5,
+        ge=0,
+        description="Updates explained_variance may stay negative before 'stuck negative' flags.",
+    )
+    advantage_std_min: float = Field(
+        default=1e-6,
+        ge=0,
+        description="Minimum std of raw rollout-buffer advantages before they're degenerate.",
+    )
+    strict: bool = Field(
+        default=False,
+        description="If True, raise on the first violation instead of only recording it. "
+        "Intended for tests/CI, not production runs.",
+    )
+
+
 class ExperimentConfig(BaseModel):
     """Full experiment configuration."""
 
@@ -244,6 +293,10 @@ class ExperimentConfig(BaseModel):
     )
     wandb: WandbConfig = Field(
         default_factory=WandbConfig, description="W&B observability configuration."
+    )
+    invariant_checks: InvariantChecksConfig = Field(
+        default_factory=InvariantChecksConfig,
+        description="PPO training-health invariant-check configuration.",
     )
     round: int = Field(default=1, ge=1, description="Training round number")
     version: str = Field(default="", description="Free-form version tag")
