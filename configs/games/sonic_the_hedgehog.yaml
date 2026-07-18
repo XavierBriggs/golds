@@ -18,15 +18,14 @@ environment:
   collectible_reward_scale: 0.01
   time_penalty: -0.001
   progress_mode: delta_max_x  # ADR-004: reward only new furthest-right progress
-  # level_end_x is the GHZ Act 1 end-x threshold. Placeholder None disables
-  # threshold-based completion detection until this is measured from the ROM
-  # on ithaca (M0 precondition, docs/inception/spec.md). Sonic x-position can
-  # be large; do not guess this value.
-  level_end_x: null
+  # GHZ Act 1 end-x, measured from the ROM info dict on ithaca 2026-07-18:
+  # screen_x_end=9407 (Sonic starts at x=80). Completion fires on EITHER
+  # x >= level_end_x OR the game's own level-clear flag (level_end_bonus > 0).
+  level_end_x: 9407
   completion_bonus: 100.0
-  # level_end_info_key: set once/if stable-retro's data.json for this game
-  # exposes a level/act-change signal; null disables this alternate signal.
-  level_end_info_key: null
+  # level_end_bonus is Sonic's end-of-level time bonus: 0 during the level,
+  # non-zero the moment Sonic touches the end signpost. Robust clear signal.
+  level_end_info_key: level_end_bonus
 
 ppo:
   learning_rate: 3e-4
@@ -38,17 +37,16 @@ ppo:
   clip_schedule: linear
 
 training:
-  total_timesteps: 100000000
-  eval_freq: 200000
-  # R6: fixed from eval_episodes=3 / eval_deterministic=false to the spec'd
-  # 100-episode deterministic eval. Note the tradeoff before an M3 ithaca
-  # run: eval_episodes is also used by the *periodic* in-training eval
-  # (every eval_freq steps), so this makes every periodic eval run 100
-  # sequential episodes in a single-emulator retro env instead of 3 --
-  # meaningfully more wall-clock overhead across ~500 evals in a 100M-step
-  # run. Reduce eval_freq if that overhead is too high in practice.
+  # First M3 iteration is right-sized to the estimate (10-30M for GHZ1);
+  # extend if the run shows learning but not completion. 20M ~= 2.8h at 2000/s.
+  total_timesteps: 20000000
+  # eval_episodes is shared by periodic and final eval, and 100 sequential
+  # episodes in single-emulator retro is expensive, so eval_freq is kept high
+  # (few periodic evals). The final 100-ep deterministic eval at run end is the
+  # north-star completion-rate measurement (R6/R11).
+  eval_freq: 5000000
   eval_episodes: 100
   eval_deterministic: true
-  save_freq: 500000
+  save_freq: 2000000
   seed: 42
-  video_freq: 10000000
+  video_freq: 5000000
