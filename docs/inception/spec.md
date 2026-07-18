@@ -3,7 +3,7 @@
 
 Date: 2026-07-18
 Status: LIVING. This spec is expected to change. See Living spec below.
-Last re-sync: 2026-07-18, after M1a (walking skeleton verified on ithaca)
+Last re-sync: 2026-07-18, after M1b (W&B verified live; throughput finding recorded)
 
 ## Problem
 
@@ -64,6 +64,7 @@ Things only Xavier can do; build sessions cannot. Must exist before the mileston
 - W&B account created and `WANDB_API_KEY` set on ithaca. (Needed for M1b, not M1a.)
 - Sonic Genesis ROM imported on ithaca (`golds rom import`). Not redistributable; not in the repo. (Needed for M2 retro probe and M3; R3-R5 unit tests do NOT need it.)
 - ithaca reachable: Tailscale VPN up, `xbriggs` creds working. Documented in the repo CLAUDE.md.
+- ithaca sleep/suspend DISABLED before any long run (`sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target`). Evidence (2026-07-18): the probe's 177 steps/sec was wall-clock-contaminated by the box suspending mid-run; a clean short run clocked ~2200 steps/sec on the same config. Long runs must not sleep.
 
 ### M1a: Walking skeleton (fully local, zero external deps) [DONE 2026-07-18]
 
@@ -71,9 +72,9 @@ Verified end to end on ithaca: 50k Breakout run wrote a results.json row with di
 
 The thinnest slice that actually runs end to end with no SaaS and no human verification: fix the results.json timestamp bug, add git provenance capture (R12), run a short Breakout run on ithaca that writes a valid results.json row (correct timestamps, config hash, git_sha, git_dirty), and have `golds diagnose` read that row and return a health verdict. Every done-condition is machine-checkable locally. Uses Breakout (already validated) so M1a tests plumbing, not RL outcome. This is the walking skeleton: real training path + real results store + real diagnose, no credentials.
 
-### M1b: Observability layer (needs M0 W&B key)
+### M1b: Observability layer (needs M0 W&B key) [DONE 2026-07-18]
 
-Add the W&B callback on top of the walking skeleton. Programmatic done-condition via the wandb API.
+Verified live: a short Breakout run streamed to W&B (project golds, entity xbriggss) with the PPO health metrics plotting on the dashboard. Code committed 13f5fde, 120 tests green. Graceful degradation (config-flag gated, W&B failures never crash training). W&B video still deferred to M3.
 
 ### M2: Throughput baseline + retro readiness
 
@@ -141,6 +142,7 @@ Re-sync ritual, run at the end of every milestone before starting the next:
 | Date | What diverged | Accepted because |
 |---|---|---|
 | 2026-07-18 | ithaca's repo working tree was dirty during the M1a run (git_dirty=True). | Accepted for the skeleton (it validated the flag working). Ops item: clean or explain ithaca's working tree before M2/M3 real runs, since the "trusted result = reproducible from git SHA" principle needs git_dirty=False for a baseline to count. |
+| 2026-07-18 | The probe's 177 steps/sec (grade A, the number driving ADR-002's "throughput is the top risk") was wall-clock-contaminated: ithaca suspended mid-run. A clean M1b run measured ~2200 steps/sec on the same Atari config, so real compute throughput is ~12x the probed figure. | Reframes G1/R1/R2 and ADR-002: Atari throughput is healthy; the "problem" was the box sleeping. Retro (Sonic) still needs its own measurement (R1) since it is heavier, but the throughput milestone is now likely a much smaller lift. Disable-sleep elevated to an M0 precondition. |
 
 ## Red team
 
