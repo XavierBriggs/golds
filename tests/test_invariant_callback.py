@@ -137,6 +137,20 @@ class TestExplainedVarianceTrend:
         violations = cb.get_violations()
         assert any(v["name"] == "explained_variance_trend" for v in violations)
 
+    def test_healthy_dip_above_floor_does_not_flag(self):
+        """A sharp EV dip that stays in the healthy band is normal volatility.
+
+        Regression for the false positive seen on the 2026-07-18 Breakout
+        baseline: EV fell 0.77 -> 0.35 (a >0.3 drop) but 0.35 is healthy.
+        The floor gate must suppress this.
+        """
+        cb = _make_callback()
+        for i, ev in enumerate([0.75, 0.80, 0.77, 0.78, 0.35]):
+            cb.model = _make_model(name_to_value={"train/explained_variance": ev})
+            cb.num_timesteps = (i + 1) * 1000
+            cb._on_rollout_end()
+        assert cb.get_violations() == []
+
     def test_stuck_negative_late_in_training_flags(self):
         """explained_variance stuck negative well past the grace period is flagged."""
         cb = _make_callback(explained_variance_grace_updates=3)

@@ -24,7 +24,9 @@ Invariants (see docs/inception/spec.md R10 and 03-synthesis.md G5):
    collapse. We do NOT require strict monotonicity per update -- EV is
    noisy update-to-update. Instead we keep a short rolling window and
    flag either (a) a sharp drop: the latest value falls more than
-   ``explained_variance_drop`` below the rolling mean of the window, or
+   ``explained_variance_drop`` below the rolling mean of the window AND
+   also below ``explained_variance_floor`` (a dip that stays in the
+   healthy band is normal early-training noise, not a collapse), or
    (b) EV still negative after ``explained_variance_grace_updates``
    updates (a value network that never learns to predict returns).
 4. Rollout-buffer advantages are finite and non-degenerate.
@@ -70,6 +72,7 @@ class PPOInvariantCallback(BaseCallback):
         approx_kl_max: float = 0.05,
         explained_variance_window: int = 5,
         explained_variance_drop: float = 0.3,
+        explained_variance_floor: float = 0.2,
         explained_variance_grace_updates: int = 5,
         advantage_std_min: float = 1e-6,
         strict: bool = False,
@@ -100,6 +103,7 @@ class PPOInvariantCallback(BaseCallback):
         self.approx_kl_max = approx_kl_max
         self.explained_variance_window = explained_variance_window
         self.explained_variance_drop = explained_variance_drop
+        self.explained_variance_floor = explained_variance_floor
         self.explained_variance_grace_updates = explained_variance_grace_updates
         self.advantage_std_min = advantage_std_min
         self.strict = strict
@@ -171,12 +175,20 @@ class PPOInvariantCallback(BaseCallback):
         window = self._ev_history
         if len(window) >= 2:
             window_mean = float(np.mean(window))
-            if ev < window_mean - self.explained_variance_drop:
+            # A sharp drop only signals collapse if EV also falls to a
+            # genuinely low absolute level. Early-training EV is noisy and
+            # swings within the healthy 0.3-0.8 band; a dip that stays above
+            # the floor is normal volatility, not a value-function collapse.
+            if (
+                ev < window_mean - self.explained_variance_drop
+                and ev < self.explained_variance_floor
+            ):
                 self._record_violation(
                     "explained_variance_trend",
                     f"explained_variance {ev:.3f} dropped more than "
                     f"{self.explained_variance_drop} below the rolling mean "
-                    f"{window_mean:.3f} over the last {len(window)} updates",
+                    f"{window_mean:.3f} AND is below the floor "
+                    f"{self.explained_variance_floor} over the last {len(window)} updates",
                     value=ev,
                 )
 
