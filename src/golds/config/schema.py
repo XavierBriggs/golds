@@ -157,7 +157,19 @@ class TrainingConfig(BaseModel):
         ge=0,
         description="Evaluation frequency (timesteps); 0 disables evaluation",
     )
-    eval_episodes: int = Field(default=10, ge=1, description="Episodes per evaluation")
+    eval_episodes: int = Field(
+        default=10,
+        ge=1,
+        description="Episodes for the FINAL end-of-run eval (the formal baseline / "
+        "north-star completion-rate measurement). Keep high (e.g. 100).",
+    )
+    periodic_eval_episodes: int = Field(
+        default=10,
+        ge=1,
+        description="Episodes per PERIODIC in-training eval (every eval_freq steps). "
+        "Keep small: 100-episode periodic evals dominate wall-clock, especially in "
+        "single-emulator retro. Decoupled from eval_episodes.",
+    )
     eval_deterministic: bool = Field(
         default=True,
         description="Whether evaluation uses deterministic actions (if False, uses stochastic actions).",

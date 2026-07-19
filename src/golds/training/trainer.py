@@ -224,7 +224,7 @@ class Trainer:
                 eval_env=eval_env,
                 log_dir=self.output_dir,
                 eval_freq=self.config.training.eval_freq,
-                n_eval_episodes=self.config.training.eval_episodes,
+                n_eval_episodes=self.config.training.periodic_eval_episodes,
                 n_envs=self.config.environment.n_envs,
                 deterministic=self.config.training.eval_deterministic,
             )

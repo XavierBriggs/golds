@@ -183,3 +183,15 @@ def test_eval_clip_reward_defaults_none_and_overrides():
         else override.clip_reward
     )
     assert resolved is False
+
+
+def test_periodic_eval_decoupled_from_final_eval():
+    """periodic_eval_episodes is independent of eval_episodes (perf fix)."""
+    from golds.config.schema import TrainingConfig
+
+    t = TrainingConfig(eval_episodes=100)
+    assert t.eval_episodes == 100  # final eval / north-star measurement
+    assert t.periodic_eval_episodes == 10  # light periodic default, not 100
+
+    t2 = TrainingConfig(eval_episodes=100, periodic_eval_episodes=5)
+    assert t2.periodic_eval_episodes == 5
