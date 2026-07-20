@@ -195,6 +195,7 @@ class PlatformerRewardWrapper(gym.Wrapper):
         level_end_x: float | None = None,
         completion_bonus: float = 0.0,
         level_end_info_key: str | None = None,
+        terminate_on_completion: bool = True,
     ) -> None:
         super().__init__(env)
         if progress_mode not in _PROGRESS_MODES:
@@ -212,6 +213,7 @@ class PlatformerRewardWrapper(gym.Wrapper):
         self.level_end_x = level_end_x
         self.completion_bonus = completion_bonus
         self.level_end_info_key = level_end_info_key
+        self.terminate_on_completion = terminate_on_completion
         self._x_old: float = 0.0
         self._max_x: float = 0.0
         self._collectible_old: float = 0.0
@@ -259,6 +261,7 @@ class PlatformerRewardWrapper(gym.Wrapper):
 
         # Level completion (R4): threshold OR info-key signal, one-time bonus.
         completion_shaped = 0.0
+        just_completed = False
         if not self._completed:
             threshold_hit = self.level_end_x is not None and x_new >= self.level_end_x
             info_key_hit = self.level_end_info_key is not None and bool(
@@ -266,7 +269,14 @@ class PlatformerRewardWrapper(gym.Wrapper):
             )
             if threshold_hit or info_key_hit:
                 self._completed = True
+                just_completed = True
                 completion_shaped = self.completion_bonus
+
+        # Terminate the episode at the signpost: the objective is to COMPLETE
+        # the level, not run past it into the next act. This also keeps eval
+        # episodes bounded (a completing agent otherwise plays until it dies).
+        if just_completed and self.terminate_on_completion:
+            terminated = True
 
         total_shaped = x_shaped + death + collect_shaped + time_shaped + completion_shaped
 

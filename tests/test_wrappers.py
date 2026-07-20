@@ -636,6 +636,43 @@ class TestPlatformerRewardWrapperCompletion:
         assert progress["completed"] is False
         assert progress["max_x"] == pytest.approx(40.0)
 
+    def test_completion_terminates_episode_by_default(self):
+        """Reaching the signpost ends the episode (objective = complete Act 1)."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 50}, {"x": 100}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            level_end_x=100.0,
+            completion_bonus=50.0,
+        )
+        env.reset()
+        _, _, term1, _, _ = env.step(0)  # x=50, not yet
+        assert term1 is False
+        _, _, term2, _, info2 = env.step(0)  # x=100, crosses signpost
+        assert info2["level_complete"] is True
+        assert term2 is True
+
+    def test_terminate_on_completion_false_keeps_episode_running(self):
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 50}, {"x": 100}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            level_end_x=100.0,
+            completion_bonus=50.0,
+            terminate_on_completion=False,
+        )
+        env.reset()
+        env.step(0)  # x=50
+        _, _, term2, _, info2 = env.step(0)  # x=100 completes
+        assert info2["level_complete"] is True
+        assert term2 is False
+
     def test_none_threshold_disables_threshold_completion(self):
         """level_end_x=None (the default) means completion-by-threshold is disabled."""
         from golds.environments.retro.wrappers import PlatformerRewardWrapper
