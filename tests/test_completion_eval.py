@@ -240,3 +240,152 @@ def test_vecenv_info_as_list_of_dicts_is_handled() -> None:
     # env0: [completed, not completed], env1: [not completed, completed] => 2/4
     assert result["n_completed"] == 2
     assert result["completion_rate"] == pytest.approx(0.5)
+
+
+class _CappingFakeVecEnv:
+    """Single-sub-env (``num_envs == 1``) fake VecEnv for max_steps tests.
+
+    ``episode_specs`` is a list of per-episode step scripts, same schema as
+    ``_FakeVecEnv``. An episode's script may never set ``done=True`` (e.g.
+    ``[(False, False)]``) to represent a stuck Sonic episode that would
+    otherwise run forever: once the script is exhausted its last entry is
+    replayed indefinitely, so a caller that never step-caps would loop
+    without end.
+
+    ``reset()`` is instrumented (``reset_calls``) so tests can confirm
+    ``evaluate_completion_rate`` explicitly resets the env when it force-ends
+    a capped episode (the env can't auto-reset on its own — it never saw a
+    natural ``done``). The first ``reset()`` (the initial one before the eval
+    loop starts) stays on episode 0; every subsequent ``reset()`` call is
+    treated as "move on to the next scripted episode".
+    """
+
+    num_envs = 1
+
+    def __init__(self, episode_specs: list[list[tuple[bool, bool]]]) -> None:
+        self._episode_specs = episode_specs
+        self._ep_idx = 0
+        self._step_idx = 0
+        self.reset_calls = 0
+
+    def reset(self) -> np.ndarray:
+        self.reset_calls += 1
+        if self.reset_calls > 1:
+            self._ep_idx += 1
+        self._step_idx = 0
+        return np.zeros((1, 4), dtype=np.float32)
+
+    def step(self, action: np.ndarray) -> tuple:
+        spec = self._episode_specs[self._ep_idx]
+        idx = min(self._step_idx, len(spec) - 1)
+        level_complete, done = spec[idx]
+        info: dict[str, Any] = {"level_complete": level_complete}
+
+        obs = np.zeros((1, 4), dtype=np.float32)
+        rewards = np.array([1.0])
+        dones = np.array([done])
+        infos = [info]
+
+        self._step_idx += 1
+        if done:
+            self._ep_idx += 1
+            self._step_idx = 0
+
+        return obs, rewards, dones, infos
+
+
+def test_stuck_episode_is_force_ended_at_max_steps_and_not_completed() -> None:
+    """An episode that never completes and never naturally ends (done is
+    always False) would loop forever without a step cap. With max_steps set,
+    it must be force-ended, counted as NOT completed, marked capped=True, and
+    the eval must return rather than hang."""
+    # Single episode script that never sets done=True and never completes;
+    # its last entry replays indefinitely if not capped.
+    env = _CappingFakeVecEnv([[(False, False)]])
+    model = _FakeModel()
+
+    result = evaluate_completion_rate(model, env, n_episodes=1, deterministic=True, max_steps=5)
+
+    assert result["n_episodes"] == 1
+    assert result["n_completed"] == 0
+    assert result["n_capped"] == 1
+    assert result["per_episode"][0]["completed"] is False
+    assert result["per_episode"][0]["capped"] is True
+    assert result["per_episode"][0]["reward"] == pytest.approx(5.0)
+
+
+def test_episode_completing_before_cap_is_not_capped() -> None:
+    """An episode that completes and ends naturally before max_steps counts
+    as completed, with capped=False."""
+    specs = [_episode(3, complete_on_step=0)]
+    env = _FakeVecEnv(specs)
+    model = _FakeModel()
+
+    result = evaluate_completion_rate(model, env, n_episodes=1, deterministic=True, max_steps=10)
+
+    assert result["n_completed"] == 1
+    assert result["n_capped"] == 0
+    assert result["per_episode"][0]["completed"] is True
+    assert result["per_episode"][0]["capped"] is False
+
+
+def test_n_capped_counts_only_capped_episodes_and_forces_env_reset() -> None:
+    """n_capped reflects exactly the number of force-ended episodes; a
+    capped episode triggers an explicit eval_env.reset() to move to the next
+    episode (since the env itself never saw a natural done)."""
+    specs = [
+        [(False, False)],  # stuck episode -> forced cap
+        _episode(2, complete_on_step=0),  # completes naturally, no cap
+    ]
+    env = _CappingFakeVecEnv(specs)
+    model = _FakeModel()
+
+    result = evaluate_completion_rate(model, env, n_episodes=2, deterministic=True, max_steps=3)
+
+    assert result["n_episodes"] == 2
+    assert result["n_capped"] == 1
+    assert result["n_completed"] == 1
+    assert result["per_episode"][0]["capped"] is True
+    assert result["per_episode"][0]["completed"] is False
+    assert result["per_episode"][1]["capped"] is False
+    assert result["per_episode"][1]["completed"] is True
+    # Initial reset() + one forced reset() after the capped episode.
+    assert env.reset_calls == 2
+
+
+def test_max_steps_none_preserves_old_unbounded_behavior() -> None:
+    """max_steps=None (the default) must reproduce the pre-cap behavior
+    exactly: no episode is ever capped, regardless of length."""
+    specs = [
+        _episode(3, complete_on_step=1),
+        _episode(3, complete_on_step=None),
+        _episode(2, complete_on_step=0),
+        _episode(4, complete_on_step=None),
+        _episode(3, complete_on_step=2),
+    ]
+    env = _FakeVecEnv(specs)
+    model = _FakeModel()
+
+    result = evaluate_completion_rate(model, env, n_episodes=5, deterministic=True)
+
+    assert result["n_episodes"] == 5
+    assert result["n_completed"] == 3
+    assert result["completion_rate"] == pytest.approx(3 / 5)
+    assert result["n_capped"] == 0
+    assert all(ep["capped"] is False for ep in result["per_episode"])
+
+
+def test_max_steps_with_multi_env_vecenv_raises_value_error() -> None:
+    """max_steps capping is only reliable for num_envs == 1: capping a
+    multi-env VecEnv would require resetting every sub-env when just one
+    hits the cap, silently truncating the others. Must raise rather than
+    silently miscount."""
+    queues = [
+        [_episode(3, complete_on_step=None)],
+        [_episode(3, complete_on_step=None)],
+    ]
+    env = _VectorizedFakeVecEnv(queues)
+    model = _FakeModel()
+
+    with pytest.raises(ValueError, match="num_envs"):
+        evaluate_completion_rate(model, env, n_episodes=1, deterministic=True, max_steps=5)

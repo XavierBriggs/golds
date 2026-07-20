@@ -112,17 +112,35 @@ def eval_completion(
     episodes: int = typer.Option(
         100, "--episodes", "-e", help="Number of eval episodes (north-star protocol: 100)"
     ),
-    deterministic: bool = typer.Option(
-        True, "--deterministic/--stochastic", help="Use deterministic policy (north-star: True)"
+    max_episode_steps: int = typer.Option(
+        4500,
+        "--max-episode-steps",
+        help=(
+            "Per-episode step cap (default 4500, the OpenAI Retro Contest "
+            "budget). Deterministic Sonic episodes can get stuck and never "
+            "reach the signpost, running until the in-game timer instead; "
+            "this forces a stuck episode to end (counted as NOT completed) "
+            "so the eval always finishes. Pass 0 to disable the cap."
+        ),
     ),
 ) -> None:
     """Run the north-star completion-rate eval (R11 / goal G6).
 
     Builds the eval env via the same factory path training uses
     (``EnvironmentFactory.create_eval_env``, so ``PlatformerRewardWrapper``
-    and its ``info["level_complete"]`` signal are present), runs
-    ``episodes`` deterministic episodes, and reports the fraction of
-    episodes in which the agent reached the level-completion signpost.
+    and its ``info["level_complete"]`` signal are present), then runs
+    ``episodes`` episodes under BOTH policies — deterministic (the
+    north-star protocol) and stochastic — and reports both completion
+    rates. Running both in one invocation is what makes a low deterministic
+    rate legible: a model that is fine stochastically but gets deterministic
+    episodes stuck (the reason ``max_episode_steps`` exists at all) would
+    otherwise look like a flat failure.
+
+    ``create_eval_env`` always builds a single-env (``num_envs == 1``)
+    ``DummyVecEnv`` (see ``EnvironmentFactory.create_eval_env``, which
+    hardcodes ``n_envs=1``) — required for ``max_episode_steps`` capping to
+    be reliable, since capping forces a raw ``eval_env.reset()`` that would
+    otherwise clobber other sub-envs' in-progress episodes.
     """
     from stable_baselines3 import PPO
 
@@ -147,14 +165,17 @@ def eval_completion(
 
     self_play_2p = env_cfg.players == 2 and env_cfg.opponent == "self_play"
 
+    max_steps = max_episode_steps if max_episode_steps > 0 else None
+
     console.print(f"[bold]Completion-rate eval: {model}[/bold]")
     console.print(f"Config: {config}")
-    console.print(f"Episodes: {episodes}  Deterministic: {deterministic}")
+    console.print(f"Episodes: {episodes}  Max episode steps: {max_steps or 'unbounded'}")
     console.print()
 
-    eval_env = None
-    try:
-        eval_env = EnvironmentFactory.create_eval_env(
+    def _build_eval_env():
+        # create_eval_env forces n_envs=1 internally (DummyVecEnv), which is
+        # what makes max_steps capping safe below.
+        return EnvironmentFactory.create_eval_env(
             game_id=env_cfg.game_id,
             frame_stack=env_cfg.frame_stack,
             seed=exp_config.training.seed,
@@ -175,34 +196,68 @@ def eval_completion(
                 "sticky_action_prob": 0.0,
             },
         )
+
+    results_by_policy: dict[str, dict] = {}
+    try:
         model_obj = PPO.load(model)
 
-        results = evaluate_completion_rate(
-            model_obj,
-            eval_env,
-            n_episodes=episodes,
-            deterministic=deterministic,
-        )
+        for policy_name, deterministic in (("deterministic", True), ("stochastic", False)):
+            eval_env = None
+            try:
+                eval_env = _build_eval_env()
+                assert eval_env.num_envs == 1, (
+                    "eval_completion requires a num_envs == 1 eval env for "
+                    "max_steps capping to be reliable"
+                )
+                results_by_policy[policy_name] = evaluate_completion_rate(
+                    model_obj,
+                    eval_env,
+                    n_episodes=episodes,
+                    deterministic=deterministic,
+                    max_steps=max_steps,
+                )
+            finally:
+                if eval_env is not None:
+                    eval_env.close()
     except Exception as e:
         console.print(f"[red]Completion eval failed: {e}[/red]")
         raise typer.Exit(1)
-    finally:
-        if eval_env is not None:
-            eval_env.close()
 
-    n = results["n_episodes"]
-    n_completed = results["n_completed"]
-    rate = results["completion_rate"]
+    det = results_by_policy["deterministic"]
+    sto = results_by_policy["stochastic"]
+
+    det_n, det_completed, det_rate = det["n_episodes"], det["n_completed"], det["completion_rate"]
+    sto_n, sto_completed, sto_rate = sto["n_episodes"], sto["n_completed"], sto["completion_rate"]
+
     console.print(
-        f"[bold green]GHZ Act 1 completion: {n_completed}/{n} = {rate * 100:.1f}%[/bold green]"
+        f"[bold green]Deterministic: {det_completed}/{det_n} = {det_rate * 100:.1f}%"
+        f"   Stochastic: {sto_completed}/{sto_n} = {sto_rate * 100:.1f}%[/bold green]"
     )
-    console.print(f"Mean reward: {results['mean_reward']:.2f}")
-    if results.get("mean_max_x") is not None:
-        console.print(f"Mean max x: {results['mean_max_x']:.1f}")
+    console.print(
+        f"Mean reward  - deterministic: {det['mean_reward']:.2f}  "
+        f"stochastic: {sto['mean_reward']:.2f}"
+    )
+    if det.get("mean_max_x") is not None:
+        console.print(f"Mean max x   - deterministic: {det['mean_max_x']:.1f}")
+    if sto.get("mean_max_x") is not None:
+        console.print(f"Mean max x   - stochastic: {sto['mean_max_x']:.1f}")
+    if det["n_capped"] or sto["n_capped"]:
+        console.print(
+            f"Capped (hit max_episode_steps) - deterministic: {det['n_capped']}/{det_n}  "
+            f"stochastic: {sto['n_capped']}/{sto_n}"
+        )
 
-    goal_met = rate >= 0.8
+    goal_met = det_rate >= 0.8
     status = "[green]MET[/green]" if goal_met else "[yellow]NOT MET[/yellow]"
-    console.print(f"Goal G6 (>= 80%): {status}")
+    console.print(f"Goal G6 (>= 80%, deterministic): {status}")
+
+    # Plain, greppable summary line — no rich markup, single line, stable
+    # format so `grep COMPLETION` always finds it regardless of terminal
+    # rendering.
+    console.print(
+        f"COMPLETION deterministic={det_rate * 100:.1f}% stochastic={sto_rate * 100:.1f}%",
+        markup=False,
+    )
 
 
 eval_app.command("completion")(eval_completion)
