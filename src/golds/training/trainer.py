@@ -149,6 +149,19 @@ class Trainer:
                 ),
                 "action_set": env_config.action_set,
                 "sticky_action_prob": 0.0,  # No sticky actions during eval
+                # Completion/progress detection MUST match the train env, or
+                # info["level_complete"] never fires in eval and completion
+                # rate reads 0% regardless of agent behavior (bug found
+                # 2026-07-19). These mirror _create_train_env.
+                "x_pos_reward_scale": env_config.x_pos_reward_scale,
+                "death_penalty": env_config.death_penalty,
+                "collectible_reward_scale": env_config.collectible_reward_scale,
+                "time_penalty": env_config.time_penalty,
+                "progress_mode": env_config.progress_mode,
+                "level_end_x": env_config.level_end_x,
+                "completion_bonus": env_config.completion_bonus,
+                "level_end_info_key": env_config.level_end_info_key,
+                "levels": env_config.levels if env_config.levels else None,
             },
         )
 

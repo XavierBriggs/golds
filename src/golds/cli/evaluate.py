@@ -194,6 +194,17 @@ def eval_completion(
                 ),
                 "action_set": env_cfg.action_set,
                 "sticky_action_prob": 0.0,
+                # Completion detection must be present or level_complete never
+                # fires and completion reads 0% (bug found 2026-07-19).
+                "x_pos_reward_scale": env_cfg.x_pos_reward_scale,
+                "death_penalty": env_cfg.death_penalty,
+                "collectible_reward_scale": env_cfg.collectible_reward_scale,
+                "time_penalty": env_cfg.time_penalty,
+                "progress_mode": env_cfg.progress_mode,
+                "level_end_x": env_cfg.level_end_x,
+                "completion_bonus": env_cfg.completion_bonus,
+                "level_end_info_key": env_cfg.level_end_info_key,
+                "levels": env_cfg.levels if env_cfg.levels else None,
             },
         )
 

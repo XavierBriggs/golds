@@ -28,9 +28,13 @@ environment:
   level_end_info_key: level_end_bonus
 
 ppo:
-  learning_rate: 3e-4
+  # Run #2 tuning (2026-07-20): run #1 peaked ~1120 then decayed to ~779 with
+  # approx_kl over the 0.05 ceiling (unstable late updates), and the
+  # deterministic policy got stuck at x~3895/9407. Lower LR for stability
+  # (fix #3), raise ent_coef for exploration to escape the stuck point (fix #2).
+  learning_rate: 2.0e-4
   n_steps: 512
-  ent_coef: 0.005
+  ent_coef: 0.01
   batch_size: 256
   clip_range: 0.2
   lr_schedule: linear
