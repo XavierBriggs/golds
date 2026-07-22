@@ -774,6 +774,118 @@ class TestPlatformerRewardWrapperEpisodeProgress:
 
 
 # ---------------------------------------------------------------------------
+# PlatformerRewardWrapper: anti-stall truncation (Tier-1, see
+# research-workspace/REPORT.md)
+# ---------------------------------------------------------------------------
+
+
+class TestPlatformerRewardWrapperStallLimit:
+    def test_disabled_by_default(self):
+        """stall_limit=None (default) never truncates, however long it stalls."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}] + [{"x": 0}] * 20
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos), scale=0.0, game="SonicTheHedgehog-Genesis"
+        )
+        assert env.stall_limit is None
+        env.reset()
+        for _ in range(20):
+            _, _, _, truncated, _ = env.step(0)
+            assert truncated is False
+
+    def test_truncates_after_sustained_no_progress(self):
+        """Stalling for MORE than stall_limit steps truncates (timeout, not death)."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}] + [{"x": 0}] * 5  # reset + 5 non-improving steps
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            stall_limit=3,
+        )
+        env.reset()
+
+        results = []
+        for _ in range(5):
+            _, _, terminated, truncated, _info = env.step(0)
+            results.append((terminated, truncated))
+
+        # steps_since_improvement: 1,2,3,4,5 -> truncates once it exceeds 3.
+        assert [t for _term, t in results] == [False, False, False, True, True]
+        # It's a timeout, never a death: terminated stays False throughout.
+        assert all(term is False for term, _t in results)
+
+    def test_no_truncation_with_steady_progress(self):
+        """A steadily-progressing run never accumulates stall steps."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 10}, {"x": 20}, {"x": 30}, {"x": 40}, {"x": 50}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            stall_limit=3,
+        )
+        env.reset()
+        for _ in range(5):
+            _, _, _, truncated, _info = env.step(0)
+            assert truncated is False
+
+    def test_counter_resets_on_new_max_x(self):
+        """The stall counter resets whenever max_x improves, not just on reset()."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        # 3 stalls at x=0 (counter reaches 3, not yet > limit), then a new
+        # max (x=10) resets the counter, then 4 more stalls at x=10 (counter
+        # exceeds the limit on the 4th).
+        infos = [
+            {"x": 0}, {"x": 0}, {"x": 0}, {"x": 0},
+            {"x": 10}, {"x": 10}, {"x": 10}, {"x": 10}, {"x": 10},
+        ]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            stall_limit=3,
+        )
+        env.reset()
+
+        truncated_flags = []
+        for _ in range(8):
+            _, _, _, truncated, _info = env.step(0)
+            truncated_flags.append(truncated)
+
+        assert truncated_flags == [
+            False, False, False,  # counter 1,2,3 (not > 3)
+            False,  # x=10 improves max_x, counter resets to 0
+            False, False, False,  # counter 1,2,3 again (not > 3)
+            True,  # counter 4 > 3
+        ]
+
+    def test_counter_resets_on_env_reset(self):
+        """reset() clears the stall counter for a fresh episode."""
+        from golds.environments.retro.wrappers import PlatformerRewardWrapper
+
+        infos = [{"x": 0}, {"x": 0}, {"x": 0}]
+        env = PlatformerRewardWrapper(
+            _FakeRetroEnv(infos),
+            scale=0.0,
+            game="SonicTheHedgehog-Genesis",
+            stall_limit=1,
+        )
+        env.reset()
+        env.step(0)  # counter=1, not > 1
+        _, _, _, truncated, _info = env.step(0)  # counter=2 > 1
+        assert truncated is True
+
+        env.reset()
+        _, _, _, truncated2, _info2 = env.step(0)  # fresh counter=1, not > 1
+        assert truncated2 is False
+
+
+# ---------------------------------------------------------------------------
 # TimeLimitWrapper tests
 # ---------------------------------------------------------------------------
 

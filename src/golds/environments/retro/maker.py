@@ -97,40 +97,81 @@ class RetroPreprocessing(gym.Wrapper):
 
 
 class FrameSkip(gym.Wrapper):
-    """Frame skipping wrapper that takes max over last frames."""
+    """Frame skipping wrapper that takes max over last frames.
 
-    def __init__(self, env: gym.Env, skip: int = 4) -> None:
+    Supports two modes:
+    - Fixed skip (default, backward compatible): repeats the action for
+      exactly ``skip`` frames every step.
+    - Stochastic skip (``stochastic=True``): samples the number of frames to
+      repeat uniformly from ``[skip_min, skip_max]`` (inclusive) on EVERY
+      step. This is the Sonic/gym-retro benchmark recipe (Tier-1, see
+      research-workspace/REPORT.md): the timing noise breaks the
+      deterministic freeze/oscillation loops a fixed frame skip can lock an
+      agent into.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        skip: int = 4,
+        stochastic: bool = False,
+        skip_min: int = 2,
+        skip_max: int = 4,
+    ) -> None:
         """Initialize frame skip wrapper.
 
         Args:
             env: Environment to wrap
-            skip: Number of frames to skip
+            skip: Number of frames to skip (fixed mode)
+            stochastic: If True, sample the skip count each step from
+                ``[skip_min, skip_max]`` instead of using a fixed ``skip``.
+            skip_min: Minimum frame skip (stochastic mode only)
+            skip_max: Maximum frame skip (stochastic mode only)
         """
         super().__init__(env)
         self.skip = skip
-        self._obs_buffer = np.zeros((2,) + env.observation_space.shape, dtype=np.uint8)
+        self.stochastic = stochastic
+        self.skip_min = skip_min
+        self.skip_max = skip_max
+        self._rng = np.random.default_rng()
+
+    def _sample_skip(self) -> int:
+        """Return the number of frames to repeat this step."""
+        if not self.stochastic:
+            return self.skip
+        return int(self._rng.integers(self.skip_min, self.skip_max + 1))
 
     def step(self, action: Any) -> tuple:
         """Step with frame skipping."""
         total_reward = 0.0
         terminated = truncated = False
+        n = self._sample_skip()
 
-        for i in range(self.skip):
+        # Track only the last two frames actually observed THIS call (never
+        # carry over a stale frame from a previous step/reset), so pooling
+        # is correct regardless of how many frames this call runs — fixed
+        # skip or stochastic skip, including the n=1 edge case.
+        last_obs = second_last_obs = None
+        for _ in range(n):
             obs, reward, terminated, truncated, info = self.env.step(action)
             total_reward += reward
-
-            # Store last two frames for max pooling
-            if i == self.skip - 2:
-                self._obs_buffer[0] = obs
-            if i == self.skip - 1:
-                self._obs_buffer[1] = obs
+            second_last_obs = last_obs
+            last_obs = obs
 
             if terminated or truncated:
                 break
 
-        # Max pool over last 2 frames
-        obs = self._obs_buffer.max(axis=0)
+        # Max pool over last 2 frames (or just the one frame observed, if
+        # the episode ended before a second frame was captured).
+        obs = np.maximum(second_last_obs, last_obs) if second_last_obs is not None else last_obs
         return obs, total_reward, terminated, truncated, info
+
+    def reset(self, **kwargs) -> tuple:
+        """Reset, reseeding the stochastic-skip RNG when a seed is given."""
+        seed = kwargs.get("seed")
+        if seed is not None:
+            self._rng = np.random.default_rng(seed)
+        return self.env.reset(**kwargs)
 
 
 def make_retro_env(
@@ -157,6 +198,10 @@ def make_retro_env(
     level_end_x: float | None = None,
     completion_bonus: float = 0.0,
     level_end_info_key: str | None = None,
+    stochastic_frameskip: bool = False,
+    frameskip_min: int = 2,
+    frameskip_max: int = 4,
+    stall_limit: int | None = None,
 ) -> gym.Env:
     """Create a single retro environment with preprocessing.
 
@@ -166,7 +211,14 @@ def make_retro_env(
         screen_size: Size to resize frames to
         grayscale: Convert to grayscale
         clip_reward: Clip rewards
-        frame_skip: Number of frames to skip
+        frame_skip: Number of frames to skip (fixed mode)
+        stochastic_frameskip: Sample frame skip from [frameskip_min,
+            frameskip_max] each step instead of the fixed frame_skip
+            (Tier-1, see research-workspace/REPORT.md).
+        frameskip_min: Minimum frame skip when stochastic_frameskip=True.
+        frameskip_max: Maximum frame skip when stochastic_frameskip=True.
+        stall_limit: Truncate the episode after this many steps with no
+            max_x improvement (None disables anti-stall termination).
 
     Returns:
         Preprocessed gym.Env
@@ -210,6 +262,7 @@ def make_retro_env(
         or time_penalty != 0
         or level_end_x is not None
         or level_end_info_key is not None
+        or stall_limit is not None
     )
     if has_shaping:
         from golds.environments.retro.wrappers import PlatformerRewardWrapper
@@ -225,6 +278,7 @@ def make_retro_env(
             level_end_x=level_end_x,
             completion_bonus=completion_bonus,
             level_end_info_key=level_end_info_key,
+            stall_limit=stall_limit,
         )
 
     # 5. Time limit for fighting games
@@ -236,8 +290,12 @@ def make_retro_env(
     # 6. Monitor AFTER reward shaping so info["episode"] captures shaped rewards
     env = Monitor(env)
 
-    # 7. Frame skipping
-    if frame_skip > 1:
+    # 7. Frame skipping (stochastic {2,3,4} = Tier-1 Sonic recipe, else fixed)
+    if stochastic_frameskip:
+        env = FrameSkip(
+            env, stochastic=True, skip_min=frameskip_min, skip_max=frameskip_max
+        )
+    elif frame_skip > 1:
         env = FrameSkip(env, skip=frame_skip)
 
     # 8. Preprocessing
@@ -300,6 +358,10 @@ def make_retro_vec_env(
         "level_end_x": None,
         "completion_bonus": 0.0,
         "level_end_info_key": None,
+        "stochastic_frameskip": False,
+        "frameskip_min": 2,
+        "frameskip_max": 4,
+        "stall_limit": None,
     }
 
     if wrapper_kwargs:
@@ -322,6 +384,10 @@ def make_retro_vec_env(
             "level_end_x",
             "completion_bonus",
             "level_end_info_key",
+            "stochastic_frameskip",
+            "frameskip_min",
+            "frameskip_max",
+            "stall_limit",
         }
         filtered = {k: v for k, v in wrapper_kwargs.items() if k in allowed}
         default_kwargs.update(filtered)

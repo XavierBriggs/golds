@@ -205,6 +205,13 @@ def eval_completion(
                 "completion_bonus": env_cfg.completion_bonus,
                 "level_end_info_key": env_cfg.level_end_info_key,
                 "levels": env_cfg.levels if env_cfg.levels else None,
+                # Mirror the trainer's eval env so frame-skip/anti-stall
+                # behavior matches what the model was trained/evaluated
+                # against (same rationale as the completion fields above).
+                "stochastic_frameskip": env_cfg.stochastic_frameskip,
+                "frameskip_min": env_cfg.frameskip_min,
+                "frameskip_max": env_cfg.frameskip_max,
+                "stall_limit": env_cfg.stall_limit,
             },
         )
 

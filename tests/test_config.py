@@ -185,6 +185,76 @@ def test_eval_clip_reward_defaults_none_and_overrides():
     assert resolved is False
 
 
+class TestTier1ConfigAlignment:
+    """Tests for Tier-1 config alignment fields (stochastic frameskip, anti-stall).
+
+    See research-workspace/REPORT.md for the research backing these fields.
+    """
+
+    def test_stochastic_frameskip_defaults(self):
+        from golds.config.schema import EnvironmentConfig
+
+        cfg = EnvironmentConfig(platform="retro", game_id="sonic_the_hedgehog")
+        assert cfg.stochastic_frameskip is False
+        assert cfg.frameskip_min == 2
+        assert cfg.frameskip_max == 4
+
+    def test_stochastic_frameskip_custom_values(self):
+        from golds.config.schema import EnvironmentConfig
+
+        cfg = EnvironmentConfig(
+            platform="retro",
+            game_id="sonic_the_hedgehog",
+            stochastic_frameskip=True,
+            frameskip_min=2,
+            frameskip_max=4,
+        )
+        assert cfg.stochastic_frameskip is True
+        assert cfg.frameskip_min == 2
+        assert cfg.frameskip_max == 4
+
+    def test_stall_limit_defaults_to_none(self):
+        from golds.config.schema import EnvironmentConfig
+
+        cfg = EnvironmentConfig(platform="retro", game_id="sonic_the_hedgehog")
+        assert cfg.stall_limit is None
+
+    def test_stall_limit_custom_value(self):
+        from golds.config.schema import EnvironmentConfig
+
+        cfg = EnvironmentConfig(
+            platform="retro", game_id="sonic_the_hedgehog", stall_limit=600
+        )
+        assert cfg.stall_limit == 600
+
+
+class TestSonicConfigTier1Values:
+    """Load the real Sonic game config and check the Tier-1 aligned values."""
+
+    def test_sonic_config_loads_tier1_values(self, configs_dir):
+        from golds.config.loader import ConfigLoader
+
+        loader = ConfigLoader(configs_dir)
+        config = loader.load_game("sonic_the_hedgehog")
+        env = config.environment
+
+        assert env.stochastic_frameskip is True
+        assert env.frameskip_min == 2
+        assert env.frameskip_max == 4
+        assert env.sticky_action_prob == 0.0
+        assert env.x_pos_reward_scale == 0.01
+        assert env.completion_bonus == 10.0
+        assert env.stall_limit == 600
+
+        # Unchanged / preserved settings (task explicitly requires these stay put).
+        assert env.progress_mode == "delta_max_x"
+        assert env.level_end_x == 9407
+        assert env.level_end_info_key == "level_end_bonus"
+        assert config.ppo.learning_rate == pytest.approx(2e-4)
+        assert config.ppo.ent_coef == pytest.approx(0.01)
+        assert config.training.total_timesteps == 20_000_000
+
+
 def test_periodic_eval_decoupled_from_final_eval():
     """periodic_eval_episodes is independent of eval_episodes (perf fix)."""
     from golds.config.schema import TrainingConfig

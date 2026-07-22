@@ -45,6 +45,21 @@ class EnvironmentConfig(BaseModel):
     n_envs: int = Field(default=8, ge=1, description="Number of parallel environments")
     frame_stack: int = Field(default=4, ge=1, description="Number of frames to stack")
     frame_skip: int = Field(default=4, ge=1, description="Number of frames to skip")
+    stochastic_frameskip: bool = Field(
+        default=False,
+        description=(
+            "Sample frame skip uniformly from [frameskip_min, frameskip_max] each "
+            "step instead of a fixed frame_skip (the Sonic/Retro benchmark recipe: "
+            "timing noise breaks deterministic freeze/oscillation loops). "
+            "0 = disabled, falls back to fixed frame_skip."
+        ),
+    )
+    frameskip_min: int = Field(
+        default=2, ge=1, description="Minimum frame skip when stochastic_frameskip=True."
+    )
+    frameskip_max: int = Field(
+        default=4, ge=1, description="Maximum frame skip when stochastic_frameskip=True."
+    )
     screen_size: int = Field(default=84, ge=1, description="Screen size after resize")
     grayscale: bool = Field(default=True, description="Convert to grayscale")
     clip_reward: bool = Field(default=True, description="Clip rewards to {-1, 0, 1}")
@@ -144,6 +159,15 @@ class EnvironmentConfig(BaseModel):
         description=(
             "Optional retro info dict key that signals level completion when "
             "truthy (e.g. a level/act-change flag). None disables this signal."
+        ),
+    )
+    stall_limit: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Truncate the episode (timeout, not death) after this many steps "
+            "with no improvement in max_x. None disables anti-stall termination "
+            "(backward compatible)."
         ),
     )
 

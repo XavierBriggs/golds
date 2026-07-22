@@ -106,6 +106,10 @@ class Trainer:
                 "level_end_x": env_config.level_end_x,
                 "completion_bonus": env_config.completion_bonus,
                 "level_end_info_key": env_config.level_end_info_key,
+                "stochastic_frameskip": env_config.stochastic_frameskip,
+                "frameskip_min": env_config.frameskip_min,
+                "frameskip_max": env_config.frameskip_max,
+                "stall_limit": env_config.stall_limit,
             },
             rnd_enabled=self.config.training.rnd_enabled,
             rnd_reward_scale=self.config.training.rnd_reward_scale,
@@ -162,6 +166,13 @@ class Trainer:
                 "completion_bonus": env_config.completion_bonus,
                 "level_end_info_key": env_config.level_end_info_key,
                 "levels": env_config.levels if env_config.levels else None,
+                # Mirror the train env's frame-skip/anti-stall settings so
+                # eval behaves consistently (same rationale as the
+                # completion/progress fields above).
+                "stochastic_frameskip": env_config.stochastic_frameskip,
+                "frameskip_min": env_config.frameskip_min,
+                "frameskip_max": env_config.frameskip_max,
+                "stall_limit": env_config.stall_limit,
             },
         )
 

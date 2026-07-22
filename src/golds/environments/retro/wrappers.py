@@ -160,6 +160,13 @@ class PlatformerRewardWrapper(gym.Wrapper):
     - ``info.get(level_end_info_key)`` is truthy, if ``level_end_info_key`` is set
       (e.g. a level/act-change flag, if stable-retro's data.json exposes one).
 
+    Anti-stall termination (Tier-1, see research-workspace/REPORT.md):
+    ``stall_limit`` tracks the number of consecutive steps since ``max_x``
+    last improved. If that count EXCEEDS ``stall_limit``, the episode is
+    truncated (``truncated=True``, never ``terminated`` — it's a timeout,
+    not a death) so a frozen/oscillating episode ends instead of running
+    out the clock. ``None`` (default) disables this, backward compatible.
+
     ``level_end_x`` defaults to ``None``, meaning threshold-based completion is
     DISABLED, so nothing silently reports false completion. Sonic x-position
     can be large (and can in principle loop/wrap within a level), so this
@@ -196,6 +203,7 @@ class PlatformerRewardWrapper(gym.Wrapper):
         completion_bonus: float = 0.0,
         level_end_info_key: str | None = None,
         terminate_on_completion: bool = True,
+        stall_limit: int | None = None,
     ) -> None:
         super().__init__(env)
         if progress_mode not in _PROGRESS_MODES:
@@ -214,10 +222,12 @@ class PlatformerRewardWrapper(gym.Wrapper):
         self.completion_bonus = completion_bonus
         self.level_end_info_key = level_end_info_key
         self.terminate_on_completion = terminate_on_completion
+        self.stall_limit = stall_limit
         self._x_old: float = 0.0
         self._max_x: float = 0.0
         self._collectible_old: float = 0.0
         self._completed: bool = False
+        self._steps_since_improvement: int = 0
         self._extractor = self._resolve_extractor(game)
         self._collectible_extractor = self._resolve_collectible_extractor(game)
 
@@ -244,6 +254,15 @@ class PlatformerRewardWrapper(gym.Wrapper):
             x_shaped = self.scale * max(0.0, x_new - self._max_x)
         else:  # "delta_x" (default, backward compatible)
             x_shaped = self.scale * (x_new - self._x_old)
+
+        # Anti-stall tracking (Tier-1): counts steps since max_x last
+        # improved, independent of progress_mode/shaping — the frontier
+        # (max_x) is tracked regardless of how the reward itself is shaped.
+        if x_new > self._max_x:
+            self._steps_since_improvement = 0
+        else:
+            self._steps_since_improvement += 1
+
         self._x_old = x_new
         self._max_x = max(self._max_x, x_new)
 
@@ -278,6 +297,14 @@ class PlatformerRewardWrapper(gym.Wrapper):
         if just_completed and self.terminate_on_completion:
             terminated = True
 
+        # Anti-stall timeout (Tier-1): a frozen/oscillating episode is
+        # truncated, never terminated, once it exceeds the stall budget.
+        stall_truncated = (
+            self.stall_limit is not None and self._steps_since_improvement > self.stall_limit
+        )
+        if stall_truncated:
+            truncated = True
+
         total_shaped = x_shaped + death + collect_shaped + time_shaped + completion_shaped
 
         info["raw_reward"] = reward
@@ -288,6 +315,8 @@ class PlatformerRewardWrapper(gym.Wrapper):
         info["shaped_time"] = time_shaped
         info["shaped_completion_bonus"] = completion_shaped
         info["level_complete"] = self._completed
+        info["steps_since_improvement"] = self._steps_since_improvement
+        info["stall_truncated"] = stall_truncated
 
         return obs, reward + total_shaped, terminated, truncated, info
 
@@ -297,6 +326,7 @@ class PlatformerRewardWrapper(gym.Wrapper):
         self._max_x = self._x_old
         self._collectible_old = float(self._collectible_extractor(info))
         self._completed = False
+        self._steps_since_improvement = 0
         return obs, info
 
     def get_episode_progress(self) -> dict[str, Any]:
