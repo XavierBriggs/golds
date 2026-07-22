@@ -12,24 +12,20 @@ environment:
   clip_reward: false
   reward_regime: raw
   action_set: platformer
-  # --- Tier-1 config alignment (iteration 3, 2026-07-21) ---------------------
-  # research-backed changes to match the proven gym-retro Sonic recipe, aimed
-  # at the ~40% GHZ Act 1 stall seen in prior iterations. See
-  # research-workspace/REPORT.md for the full writeup. Three changes:
-  #  1. stochastic_frameskip {2,3,4} (instead of a fixed skip): timing noise
-  #     breaks the deterministic freeze/oscillation loops the agent gets
-  #     stuck in. This now provides the exploration noise, so sticky actions
-  #     are turned off (the benchmark recipe uses one mechanism, not both).
-  #  2. x_pos_reward_scale 0.01 (was 0.1): canonical Sonic reward scale,
-  #     keeping the Retro Contest ~9:1 progress:completion ratio.
-  #  3. stall_limit 600: anti-stall timeout so an episode that stops making
-  #     forward progress for ~600 steps truncates instead of running out the
-  #     clock frozen/oscillating.
+  # --- Iteration 4 (2026-07-21): isolate the stochastic-frameskip change ------
+  # Tier-1 (iter 3) changed 3 things at once and REGRESSED (deterministic max_x
+  # 3601 -> 2712, still 0% completion). Hypothesis: stall_limit=600 truncated
+  # episodes before the agent could learn to push past a hard spot, and the
+  # reward-scale drop weakened the signal. So iter 4 KEEPS the stochastic
+  # frameskip (best-justified; it collapsed the det/stochastic gap) but REVERTS
+  # stall_limit -> None, x_pos_reward_scale -> 0.1, completion_bonus -> 100
+  # (back to the run #1/#2 values that reached ~3600-3900). This isolates
+  # whether the frameskip alone helps or my Tier-1 extras caused the regression.
   stochastic_frameskip: true
   frameskip_min: 2
   frameskip_max: 4
   sticky_action_prob: 0.0
-  x_pos_reward_scale: 0.01
+  x_pos_reward_scale: 0.1
   death_penalty: -1.0
   collectible_reward_scale: 0.01
   time_penalty: -0.001
@@ -38,11 +34,11 @@ environment:
   # screen_x_end=9407 (Sonic starts at x=80). Completion fires on EITHER
   # x >= level_end_x OR the game's own level-clear flag (level_end_bonus > 0).
   level_end_x: 9407
-  completion_bonus: 10.0
+  completion_bonus: 100.0
   # level_end_bonus is Sonic's end-of-level time bonus: 0 during the level,
   # non-zero the moment Sonic touches the end signpost. Robust clear signal.
   level_end_info_key: level_end_bonus
-  stall_limit: 600
+  stall_limit: null  # reverted from Tier-1's 600 (suspected own-goal)
 
 ppo:
   # Run #2 tuning (2026-07-20): run #1 peaked ~1120 then decayed to ~779 with
